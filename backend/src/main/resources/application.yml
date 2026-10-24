@@ -1,0 +1,26 @@
+server:
+  port: 8080
+  address: 127.0.0.1
+  tomcat:
+    threads:
+      max: 20
+      min-spare: 4
+  shutdown: graceful
+
+spring:
+  main:
+    banner-mode: off
+  jackson:
+    default-property-inclusion: non_null
+
+logging:
+  file:
+    path: ${APPDATA:${user.home}}/sql-diag-workbench/logs
+  level:
+    root: INFO
+    com.bitdata.sqlworkbench: DEBUG
+  logback:
+    rollingpolicy:
+      max-file-size: 10MB
+      max-history: 7
+      total-size-cap: 100MB

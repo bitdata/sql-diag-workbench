@@ -1,0 +1,120 @@
+/* 非模态（spec 2026-10-01 §5.1 / D1，票 01）：面板不再是全视口遮罩。
+   容器停靠在窗口右下角且 pointer-events: none —— 只有面板本体可交互，
+   于是逐跳 reveal 出来的真父切面落在左侧树里、当场可见，面板之外的控件
+   （横幅按钮、树的右键菜单）也不再被拦截。 */
+.build-panel-overlay {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 1000;
+  pointer-events: none;
+}
+
+.build-panel {
+  pointer-events: auto;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  width: 380px;
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.build-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.build-panel-header h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.build-panel-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 18px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.build-panel-close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.build-panel-body {
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+}
+
+.build-section h3 {
+  margin: 0 0 10px 0;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+}
+
+.build-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.build-toggles {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.build-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.build-toggle input {
+  accent-color: var(--accent-primary);
+}
+
+.build-hint {
+  margin: var(--space-sm, 8px) 0 0;
+  color: var(--text-muted, #9aa0a6);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.build-degraded {
+  margin: 0 0 var(--space-sm, 8px);
+  color: var(--warning, #d9a441);
+  font-size: 12px;
+}
+
+.build-empty {
+  margin: 0;
+  color: var(--text-muted, #9aa0a6);
+  font-size: 12px;
+}
+
+.build-toggle-disabled span {
+  opacity: 0.6;
+}

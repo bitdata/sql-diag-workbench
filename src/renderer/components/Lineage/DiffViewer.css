@@ -1,0 +1,44 @@
+.diff-viewer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+}
+.diff-viewer-section {
+  background: var(--bg-surface, #1a1a1a);
+  border: 1px solid var(--border, #444);
+  border-radius: 4px;
+  padding: 8px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+}
+.diff-viewer-section-label {
+  font-size: 10px;
+  color: var(--text-muted, #888);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.diff-viewer-op-add    { color: var(--diff-add); background: var(--diff-add-bg); }
+.diff-viewer-op-del    { color: var(--diff-del); background: var(--diff-del-bg); text-decoration: line-through; }
+.diff-viewer-op-mod    { color: var(--diff-mod); background: var(--diff-mod-bg); }
+.diff-viewer-empty     { color: var(--text-muted, #888); font-style: italic; padding: 16px; text-align: center; }
+.diff-viewer-summary   { font-size: 11px; color: var(--text-muted, #888); margin-top: 8px; }
+.diff-viewer-mod-row   { padding: 2px 4px; margin-top: 2px; font-family: var(--font-mono, monospace); }
+
+/* Degraded badge (LCS fallback warning). The only warning token in
+   globals.css is --warning; there is no --warning-soft/-strong variant, so
+   background uses color-mix on --warning at 15% alpha and text/border share
+   the single --warning token. See DESIGN.md §Color (Semantic Colors) for the
+   available warning tone. */
+.degraded-badge {
+  background: color-mix(in srgb, var(--warning) 15%, transparent);
+  color: var(--warning);
+  border: 1px solid var(--warning);
+  border-radius: 4px;
+  padding: 6px 10px;
+  margin-bottom: 8px;
+  font-size: 13px;
+}

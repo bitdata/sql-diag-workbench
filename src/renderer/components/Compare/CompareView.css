@@ -1,0 +1,27 @@
+.compare-view { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: auto; background: var(--bg-app); color: var(--text-primary); }
+.compare-header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--border); }
+.compare-header strong { font-size: 14px; }
+.compare-header label { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.compare-view select { min-height: 28px; max-width: 100%; background: var(--bg-surface); color: var(--text-primary); border: 1px solid var(--border); border-radius: 4px; padding: 0 8px; font: inherit; }
+.compare-panels { display: flex; flex: 1; min-height: 480px; }
+.compare-pane { display: flex; flex-direction: column; flex: 1; min-width: 360px; min-height: 0; border-top: 2px solid transparent; }
+.compare-pane + .compare-pane { border-left: 1px solid var(--border); }
+.compare-pane-active { border-top-color: var(--accent); }
+.compare-pane-header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px; }
+.compare-pane-header select { flex: 1; min-width: 160px; }
+.compare-source-label { width: 100%; overflow: hidden; text-overflow: ellipsis; color: var(--text-secondary); }
+.compare-sql { display: flex; flex-direction: column; height: 220px; min-height: 120px; overflow: auto; }
+.compare-sql .sql-viewer { flex: 1; }
+.compare-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px; border-block: 1px solid var(--border); }
+.compare-actions [role=status] { color: var(--text-secondary); font-size: 12px; }
+.compare-notice, .compare-error { margin: 0; padding: 8px; font-size: 12px; }
+.compare-notice { color: var(--text-secondary); }
+.compare-error { color: var(--error); }
+.compare-pane .results-panel { flex: 1; min-height: 160px; }
+.compare-view :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.task-notices { display: flex; flex-direction: column; gap: 4px; padding: 8px 16px; color: var(--warning); }
+.task-notices > div { display: flex; align-items: center; gap: 8px; }
+
+.compare-pane-context { height:52px; flex-shrink:0; overflow:auto; }
+.compare-pane-header { min-height:64px; }
+.compare-actions { min-height:64px; align-content:flex-start; }

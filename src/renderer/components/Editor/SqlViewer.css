@@ -1,0 +1,66 @@
+/* Wrapper added by PR-2 for the boot hint overlay. It is a pass-through flex
+   level: it carries `flex: 1` for the same reason .sql-viewer-container does,
+   so the editor's own box is unchanged. `position: relative` is what anchors
+   the hint; `min-height: 0` keeps the column from overflowing. */
+.sql-viewer-shell {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.sql-viewer-container {
+  flex: 1;
+  overflow: auto;
+}
+
+/* PR-2 (spec §6.1 item 2): "视觉提示" shown while the boot session POST is in
+   flight, so the read-only editor is explained rather than just locked.
+   `pointer-events: none` keeps it from stealing clicks from the editor. */
+.sql-viewer-boot-hint {
+  position: absolute;
+  top: var(--space-sm);
+  right: var(--space-sm);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-surface-elevated);
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.sql-viewer-container .cm-editor {
+  height: 100%;
+}
+
+.sql-viewer-container .cm-scroller {
+  overflow: auto;
+}
+
+/* SQL Node Selection Highlights */
+.cm-sql-node {
+  background-color: color-mix(in srgb, var(--accent) 15%, transparent);
+  border-radius: 2px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.cm-sql-node:hover {
+  background-color: color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.cm-sql-node--selected {
+  background-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  outline: 1px solid color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+.cm-sql-node--selected:hover {
+  background-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}

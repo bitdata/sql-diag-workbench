@@ -1,0 +1,59 @@
+appId: com.bitdata.sqlworkbench
+productName: SQL Diagnostic Workbench
+copyright: Copyright © 2026 Bitdata
+
+directories:
+  output: dist
+  buildResources: build
+
+files:
+  - out/**/*
+
+beforePack: scripts/before-pack.cjs
+
+extraResources:
+  - from: backend/target/backend.jar
+    to: backend.jar
+
+win:
+  extraResources:
+    - from: build/windows-runtime
+      to: runtime
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.ico
+
+nsis:
+  deleteAppDataOnUninstall: false
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: SQL Diagnostic Workbench
+
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+  icon: build/icon.icns
+  category: public.app-category.developer-tools
+
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+  icon: build/icon.png
+  category: Development
+
+publish:
+  provider: github
+  owner: bitdata
+  repo: sql-diag-workbench

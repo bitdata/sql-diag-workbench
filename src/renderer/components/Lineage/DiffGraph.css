@@ -1,0 +1,63 @@
+.diff-graph {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  color: var(--text-primary, #e0e0e0);
+}
+.diff-graph-empty {
+  padding: 12px;
+  color: var(--text-muted, #888);
+  font-style: italic;
+  text-align: center;
+}
+.diff-graph-loading {
+  padding: 12px;
+  color: var(--text-muted, #888);
+  text-align: center;
+}
+.diff-graph-error {
+  padding: 12px;
+  color: var(--diff-error);
+  text-align: center;
+}
+.diff-graph-node-chain {
+  fill: var(--bg-surface, #1a1a1a);
+  stroke: var(--accent, #00d4aa);
+  stroke-width: 1.5;
+}
+.diff-graph-node-current {
+  fill: var(--bg-surface, #1a1a1a);
+  stroke: var(--accent, #00d4aa);
+  stroke-width: 2.5;
+}
+.diff-graph-node-ghost {
+  fill: rgba(136, 136, 136, 0.08);
+  stroke: var(--text-muted, #666);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+}
+.diff-graph-node-text {
+  fill: var(--text-primary, #e0e0e0);
+  font-size: 10px;
+  font-family: var(--font-mono, monospace);
+}
+.diff-graph-node-sub {
+  fill: var(--text-muted, #888);
+  font-size: 9px;
+  font-family: var(--font-mono, monospace);
+}
+.diff-graph-edge-tree {
+  stroke: var(--accent, #00d4aa);
+  stroke-width: 1.5;
+  fill: none;
+}
+.diff-graph-edge-virtual {
+  stroke: var(--text-muted, #888);
+  stroke-width: 1.2;
+  stroke-dasharray: 5 4;
+  fill: none;
+}
+.diff-graph-edge-label {
+  fill: var(--text-muted, #888);
+  font-size: 9px;
+  font-family: var(--font-mono, monospace);
+}

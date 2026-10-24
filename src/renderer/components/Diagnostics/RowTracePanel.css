@@ -1,0 +1,358 @@
+.row-trace-panel {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.row-trace-panel > * { flex-shrink: 0; }
+
+.trace-scope, .trace-evidence, .trace-step-reason {
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.trace-evidence {
+  padding: var(--space-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+}
+
+.trace-evidence summary { cursor: pointer; }
+.trace-evidence ul { padding-left: var(--space-lg); }
+.source-verification, .physical-source-verification { margin: var(--space-sm) var(--space-md); }
+.source-verification p, .physical-source-verification p { margin: var(--space-sm) 0; }
+.source-verification pre, .physical-source-verification pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.row-trace-instructions h4 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: var(--space-xs);
+}
+
+.row-trace-instructions p {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.row-trace-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.trace-key-row { display: flex; flex-wrap: wrap; gap: var(--space-sm); align-items: end; }
+.row-trace-form label { display: flex; gap: var(--space-xs); align-items: center; font-size: 12px; }
+.row-trace-form select { height: 28px; padding: 0 var(--space-sm); border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-app); color: var(--text-primary); }
+.row-trace-form input[type="checkbox"] { flex: none; }
+.trace-quantity, .trace-step-content pre { overflow-wrap: anywhere; white-space: pre-wrap; }
+
+.row-trace-form input {
+  flex: 1;
+  height: 28px;
+  padding: 0 var(--space-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-app);
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.row-trace-form button {
+  height: 28px;
+  padding: 0 var(--space-md);
+  background: var(--accent);
+  color: var(--text-on-accent);
+  border: none;
+  border-radius: var(--radius);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.row-trace-form button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.row-trace-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.row-trace-steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.trace-step {
+  display: flex;
+  gap: var(--space-sm);
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+}
+
+.trace-step.no-rows {
+  border-color: var(--error);
+  background: var(--error-bg);
+}
+
+.trace-step.elimination-point {
+  border-color: var(--error);
+  border-width: 2px;
+}
+
+.trace-step-index {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--bg-surface-elevated);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.trace-step-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.trace-locate-btn {
+  align-self: flex-start;
+  height: 28px;
+  padding: 0 var(--space-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+.trace-locate-btn:hover { background: var(--bg-surface-elevated); }
+.trace-locate-btn:disabled { opacity: 0.5; cursor: default; }
+.trace-locate-btn:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
+
+.trace-step-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.trace-step-sql {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.trace-step-rows {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.trace-step-zero {
+  color: var(--error);
+  font-weight: 600;
+  margin-left: var(--space-xs);
+}
+
+.trace-elimination-summary {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: var(--space-sm);
+  background: var(--bg-surface);
+  border-radius: var(--radius);
+  border-left: 3px solid var(--error);
+}
+
+.row-trace-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.row-trace-actions {
+  display: flex;
+  gap: var(--space-xs);
+}
+
+.row-trace-actions button {
+  height: 24px;
+  padding: 0 var(--space-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.trace-cancel-btn {
+  color: var(--error) !important;
+  border-color: var(--error) !important;
+}
+
+.trace-progress-info {
+  display: flex;
+  gap: var(--space-sm);
+  align-items: center;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.trace-status-completed { color: var(--success, #4caf50); }
+.trace-status-failed { color: var(--error); }
+.trace-status-cancelled { color: var(--text-muted); }
+.trace-status-running { color: var(--accent); }
+
+.trace-elapsed {
+  font-family: var(--font-mono);
+}
+
+.trace-step {
+  display: flex;
+  gap: var(--space-sm);
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+}
+
+.trace-step-no_rows {
+  border-color: var(--error);
+  background: var(--error-bg);
+}
+
+.trace-step-error {
+  border-color: var(--warning, #ff9800);
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
+}
+
+.trace-step-meta {
+  display: flex;
+  gap: var(--space-xs);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.trace-step-status { font-weight: 500; }
+.trace-step-elapsed { font-family: var(--font-mono); }
+.trace-step-error { color: var(--error); }
+
+.trace-findings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.trace-findings h5 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.trace-finding {
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+
+.trace-finding-high { border-left: 3px solid var(--error); }
+.trace-finding-medium { border-left: 3px solid var(--warning, #ff9800); }
+.trace-finding-low { border-left: 3px solid var(--text-muted); }
+
+.finding-header {
+  display: flex;
+  gap: var(--space-xs);
+  align-items: center;
+  margin-bottom: 2px;
+}
+
+.finding-severity {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.finding-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.finding-message {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.trace-error-banner {
+  padding: var(--space-sm);
+  background: color-mix(in srgb, var(--error) 15%, transparent);
+  border: 1px solid var(--error);
+  border-radius: var(--radius);
+  color: var(--error);
+  font-size: 12px;
+}
+
+/* 2026-08-27 — EliminationOutcome variants. Same layout skeleton as
+   .trace-elimination-summary (padding/background/radius/border-left 3px);
+   only border + text colors differ. No new design tokens — reuses existing
+   --warning / --text-muted / --success / --error from DESIGN.md. */
+
+.trace-outcome-error {
+  font-size: 12px;
+  color: var(--error);
+  padding: var(--space-sm);
+  background: var(--bg-surface);
+  border-radius: var(--radius);
+  border-left: 3px solid var(--warning, #ff9800);
+}
+
+.trace-outcome-error-step {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.trace-outcome-missing {
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: var(--space-sm);
+  background: var(--bg-surface);
+  border-radius: var(--radius);
+  border-left: 3px solid var(--text-muted);
+}
+
+.trace-outcome-none {
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: var(--space-sm);
+  background: var(--bg-surface);
+  border-radius: var(--radius);
+  border-left: 3px solid var(--success, #4ec9b0);
+}
+
+.trace-outcome-inconclusive, .trace-outcome-unknown {
+  border-left-color: var(--text-muted);
+}

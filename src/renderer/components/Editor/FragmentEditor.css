@@ -1,0 +1,274 @@
+/* FragmentEditor — guided edit modal powered by Radix UI Dialog */
+
+.fragment-editor-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 1000;
+  animation: fe-overlay-in 150ms ease-out;
+}
+
+@keyframes fe-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.fragment-editor-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  width: 600px;
+  max-width: 90vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  z-index: 1001;
+  animation: fe-modal-in 150ms ease-out;
+}
+
+@keyframes fe-modal-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -48%);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%);
+  }
+}
+
+/* Header */
+.fragment-editor-header {
+  padding: var(--space-md);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fragment-editor-title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.fragment-editor-icon {
+  font-size: 16px;
+  color: var(--accent);
+}
+
+.fragment-editor-title {
+  font-family: var(--font-ui);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.fragment-editor-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  padding-left: 28px;
+}
+
+/* Body */
+.fragment-editor-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-md);
+  gap: var(--space-xs);
+  overflow: hidden;
+}
+
+.fragment-editor-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.fragment-editor-toolbar-label {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.fragment-editor-textarea {
+  flex: 1;
+  min-height: 200px;
+  padding: var(--space-sm);
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-primary);
+  resize: none;
+  line-height: 1.5;
+}
+
+.fragment-editor-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.fragment-editor-error {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--error-bg);
+  border: 1px solid var(--error-border);
+  border-radius: var(--radius);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--error, #ef4444);
+}
+
+.fragment-editor-error-icon {
+  font-size: 12px;
+}
+
+/* Description */
+.fragment-editor-description {
+  padding: 0 var(--space-md) var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fragment-editor-desc-label {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.fragment-editor-desc-input {
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.fragment-editor-desc-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* Footer */
+.fragment-editor-footer {
+  padding: var(--space-md);
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-sm);
+}
+
+.fragment-editor-btn {
+  height: 32px;
+  padding: 0 var(--space-md);
+  border: none;
+  border-radius: var(--radius);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 80ms ease, opacity 80ms ease;
+}
+
+.fragment-editor-btn-secondary {
+  background: var(--bg-surface-elevated);
+  color: var(--text-primary);
+}
+
+.fragment-editor-btn-secondary:hover {
+  background: var(--bg-tertiary);
+}
+
+.fragment-editor-btn-primary {
+  background: var(--accent);
+  color: var(--bg-primary);
+}
+
+.fragment-editor-btn-primary:hover:not(:disabled) {
+  background: var(--accent-hover, var(--accent));
+}
+
+.fragment-editor-btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+/* Diff display — live preview of changes vs the original fragment */
+.fragment-editor-diff-summary {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.fragment-editor-diff {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.fragment-editor-diff-section {
+  margin-bottom: 8px;
+}
+
+.fragment-editor-diff-section:last-child {
+  margin-bottom: 0;
+}
+
+.fragment-editor-diff-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+
+.fragment-editor-diff-line {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  padding: 2px 6px;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.fragment-editor-diff-line.removed {
+  background: var(--error-bg);
+  color: var(--error);
+}
+
+.fragment-editor-diff-line.added {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.fragment-editor-diff-line.modified {
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  color: var(--warning);
+}

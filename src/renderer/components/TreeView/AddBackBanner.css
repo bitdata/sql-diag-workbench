@@ -1,0 +1,55 @@
+.add-back-banner {
+  margin: 6px 8px 0;
+  padding: 6px 8px;
+  border: 1px solid var(--accent-border, #3a6ea5);
+  border-radius: 4px;
+  background: var(--accent-bg, rgba(58, 110, 165, 0.12));
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.add-back-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.add-back-mode {
+  font-weight: 600;
+}
+
+.add-back-seed {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted, #9aa0a6);
+}
+
+.add-back-exit {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent, #6ea8fe);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.add-back-exit:hover {
+  text-decoration: underline;
+}
+
+.add-back-path {
+  margin-top: 2px;
+  color: var(--text-muted, #9aa0a6);
+  word-break: break-all;
+}
+
+.add-back-path-unresolved {
+  color: var(--warning, #d9a441);
+}
+
+.add-back-notice {
+  margin-top: 2px;
+  color: var(--warning, #d9a441);
+}

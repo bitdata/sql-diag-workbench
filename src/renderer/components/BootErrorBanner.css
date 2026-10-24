@@ -1,0 +1,62 @@
+/* ── Boot Error Banner ───────────────────────────────────────────────
+   PR-2 (rule #2 visible surface). Same geometry + tokens as
+   .backend-banner in App.css — reuses --error, --text-on-accent,
+   --font-ui, --space-sm. No new visual language.
+   ─────────────────────────────────────────────────────────────────── */
+.boot-error-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  /* min-height, not height: the session-sync message (PR-2 I-1) is a full
+     sentence and must wrap rather than be clipped. */
+  min-height: 28px;
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--error);
+  color: var(--text-on-accent);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.boot-error-banner-icon {
+  font-size: 14px;
+}
+
+.boot-error-banner--info,
+.boot-error-banner--warning {
+  background: var(--bg-surface);
+  color: var(--info);
+  border-bottom: 1px solid currentColor;
+}
+
+.boot-error-banner--warning {
+  color: var(--warning);
+}
+
+.boot-error-banner__message {
+  /* Wrap rather than truncate. A degradation notice the user cannot finish
+     reading is not an observable degradation (rule #2). */
+  max-width: 70%;
+}
+
+.boot-error-banner__retry {
+  margin-left: auto;
+  padding: 2px 10px;
+  background: transparent;
+  color: inherit;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.boot-error-banner__retry:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.boot-error-banner__retry:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}

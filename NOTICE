@@ -1,0 +1,26 @@
+SQL Diagnostic Workbench
+Copyright (c) 2026 Bitdata. Other contributors retain their copyrights.
+
+The first-party software in this project, including its source code, build
+configuration, scripts, tests, examples, and application resources, is licensed
+under the GNU Affero General Public License, version 3 only
+(SPDX-License-Identifier: AGPL-3.0-only), except where otherwise identified.
+
+The same license applies to these user-facing documents:
+README.md, README.zh-CN.md, CHANGELOG.md, LICENSING.md, and
+docs/decomposition-guide.md. This notice grants rights to the software and
+documents identified above.
+
+You may redistribute and/or modify the covered work under the terms of version
+3 of the GNU Affero General Public License as published by the Free Software
+Foundation. The covered work is distributed in the hope that it will be
+useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See LICENSE for the
+complete terms: https://www.gnu.org/licenses/agpl-3.0.html.
+
+Alternative commercial licensing may be available from the relevant copyright
+holders for uses that cannot comply with the AGPL. No commercial license is
+granted by this notice. Contact: https://github.com/bitdata.
+
+Third-party components and materials remain subject to their own copyright
+notices and licenses. This notice does not replace or waive those terms.

@@ -1,0 +1,56 @@
+/* Editor toolbar - grouped layout for breadcrumb actions.
+   Three visual groups separated by a right border on every group except the
+   last. The execute group gets a pill background to anchor the primary
+   action cluster (ModeToggle, Parse, Execute/Analyze, Stop). The transform
+   and session groups are quieter — ghost buttons inside. */
+
+.editor-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-left: 0;
+}
+
+.toolbar-group {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: 0 var(--space-xs);
+  border-right: 1px solid var(--border);
+}
+
+.toolbar-group:last-child {
+  border-right: none;
+}
+
+/* Execute group: pill-like background for the primary action cluster */
+.toolbar-group-execute {
+  padding: 2px var(--space-xs);
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+/* Remove internal borders for buttons inside the execute group so the pill
+   reads as one cohesive control instead of four framed chips. */
+.toolbar-group-execute .toolbar-btn {
+  border-color: transparent;
+}
+
+/* Ghost (secondary) button style for transform/session groups */
+.toolbar-btn-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-secondary);
+}
+
+.toolbar-btn-ghost:hover:not(:disabled) {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+/* Ensure consistent height with breadcrumb */
+.editor-toolbar .toolbar-btn,
+.editor-toolbar .mode-toggle {
+  height: 28px;
+}

@@ -1,0 +1,127 @@
+.plan-view {
+  height: 100%;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.plan-header {
+  display: flex;
+  align-items: center;
+  padding: var(--space-xs) var(--space-sm);
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+  color: var(--text-secondary);
+  position: sticky;
+  top: 0;
+  background: var(--bg-app);
+}
+
+.plan-header-op { flex: 3; }
+.plan-header-rows { flex: 1; text-align: right; }
+.plan-header-time { flex: 1.5; text-align: right; padding-right: var(--space-sm); }
+.plan-header-cost { flex: 1; text-align: right; }
+
+.plan-row {
+  display: flex;
+  align-items: center;
+  padding: 2px var(--space-sm);
+  border-bottom: 1px solid var(--border);
+  min-height: 28px;
+}
+
+.plan-row:hover {
+  background: var(--bg-surface-hover);
+}
+
+.plan-op {
+  flex: 3;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plan-rows {
+  flex: 1;
+  text-align: right;
+  color: var(--text-primary);
+}
+
+.plan-time {
+  flex: 1.5;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  justify-content: flex-end;
+  padding-right: var(--space-sm);
+}
+
+.plan-time-bar {
+  height: 6px;
+  background: var(--accent);
+  border-radius: 3px;
+  min-width: 2px;
+  opacity: 0.6;
+}
+
+.plan-time-text {
+  color: var(--text-secondary);
+  font-size: 11px;
+  min-width: 48px;
+  text-align: right;
+}
+
+.plan-cost {
+  flex: 1;
+  text-align: right;
+  color: var(--text-muted);
+}
+
+/* Loading */
+.plan-loading {
+  padding: var(--space-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.plan-skeleton-row {
+  display: flex;
+  align-items: center;
+  height: 28px;
+}
+
+.plan-skeleton-bar {
+  height: 10px;
+  background: var(--bg-surface-elevated);
+  border-radius: 2px;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+/* Empty */
+.plan-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: var(--space-xs);
+  padding: var(--space-md);
+  text-align: center;
+}
+
+.placeholder-text-sub {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  max-width: 480px;
+  word-break: break-word;
+}
+
+.plan-capture { padding: 4px 8px; font-size: 11px; color: var(--text-secondary); }
+.plan-capture p { margin: 4px 0; }
+.plan-capture pre { white-space: pre-wrap; }
+.plan-row .plan-rows, .plan-header-rows { min-width: 160px; }
+.plan-row .plan-time, .plan-header-time { min-width: 180px; }
+.plan-cost { overflow-wrap: anywhere; }

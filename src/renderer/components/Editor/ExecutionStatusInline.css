@@ -1,0 +1,29 @@
+.execution-status-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: 0 var(--space-xs);
+  font-size: 11px;
+  font-family: var(--font-ui);
+  cursor: default;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+  transition: opacity 0.5s ease-out;
+}
+
+.execution-status-normal { color: var(--text-primary); }
+.execution-status-success { color: var(--success); }
+.execution-status-warn { color: var(--warning); }
+.execution-status-error { color: var(--error); }
+.execution-status-muted { color: var(--text-muted); }
+
+.execution-status-fade {
+  opacity: 0.5;
+}
+
+.execution-status-inline[role="button"] {
+  cursor: pointer;
+}

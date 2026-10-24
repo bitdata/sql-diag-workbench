@@ -1,0 +1,5 @@
+.experiment-context { padding: 6px 12px; border-bottom: 1px solid var(--border); color: var(--text-secondary); font-size: 12px; max-height: 200px; overflow: auto; }
+.experiment-context strong { color: var(--text-primary); }
+.experiment-context pre { white-space: pre-wrap; font-family: var(--font-mono); margin: 4px 0; }
+.experiment-context summary { cursor: pointer; }
+.experiment-context button, .experiment-context select { font: inherit; color: var(--text-primary); background: var(--bg-surface); border: 1px solid var(--border); min-height: 28px; }

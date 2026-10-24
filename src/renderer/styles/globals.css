@@ -1,0 +1,228 @@
+:root {
+  /* Backgrounds */
+  --bg-app: #1a1a1a;
+  --bg-surface: #252526;
+  --bg-surface-elevated: #2d2d2d;
+  --bg-surface-hover: #2a2a2a;
+  --bg-elevated: #181818;
+
+  /* Borders */
+  --border: #3c3c3c;
+  --border-focus: #0078d4;
+
+  /* Text */
+  --text-primary: #cccccc;
+  --text-secondary: #b0b0b0;
+  --text-muted: #888888;
+
+  /* Semantic */
+  --accent: #0078d4;
+  --accent-bg: rgba(0, 120, 212, 0.2);
+  --accent-hover: #1a8ae8;
+  --success: #4ec9b0;
+  --success-hover: #2eb872;
+  --warning: #dcdcaa;
+  --error: #f14c4c;
+  --info: #569cd6;
+  --text-on-accent: #ffffff;
+  --text-on-success: #000000;
+
+  /* Diff semantic tokens */
+  --diff-add: #4ade80;
+  --diff-add-bg: rgba(74, 222, 128, 0.12);
+  --diff-del: #f87171;
+  --diff-del-bg: rgba(248, 113, 113, 0.12);
+  --diff-mod: #fbbf24;
+  --diff-mod-bg: rgba(251, 191, 36, 0.12);
+  --diff-error: #f87171;
+
+  /* Decomposition level color (predicate label) */
+  --level-predicate: #cba6f7;
+
+  /* Overlay (modal scrim + shadow) */
+  --overlay-bg: rgba(0, 0, 0, 0.5);
+  --overlay-shadow: rgba(0, 0, 0, 0.4);
+
+  /* Test result card backgrounds (ConnectionDialog) */
+  --success-bg: rgba(78, 201, 176, 0.1);
+  --success-border: rgba(78, 201, 176, 0.2);
+  --error-bg: rgba(241, 76, 76, 0.1);
+  --error-border: rgba(241, 76, 76, 0.2);
+
+  /* Syntax highlighting */
+  --syn-keyword: #569cd6;
+  --syn-string: #ce9178;
+  --syn-number: #b5cea8;
+  --syn-comment: #6a9955;
+  --syn-function: #dcdcaa;
+  --syn-operator: #d4d4d4;
+  --syn-table: #9cdcfe;
+
+  /* Typography */
+  --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Consolas', monospace;
+
+  /* Spacing (4px base) */
+  --space-2xs: 2px;
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+
+  /* Component sizes */
+  --tree-node-height: 34px;
+  --tree-icon-size: 16px;
+  --tree-node-padding: 12px;
+  --tree-indent-per-level: 20px;
+  --tree-gap: 2px;
+  --tab-height: 32px;
+  --button-height-sm: 28px;
+  --button-height-md: 36px;
+  --input-height: 28px;
+  --breadcrumb-height: 24px;
+
+  /* Radii */
+  --radius: 4px;
+}
+
+/* Light Theme Override */
+.theme-light {
+  --bg-app: #ffffff;
+  --bg-surface: #f5f5f5;
+  --bg-surface-elevated: #ffffff;
+  --bg-surface-hover: #eaeaea;
+  --bg-elevated: #fafafa;
+
+  --border: #d4d4d4;
+  --border-focus: #0078d4;
+
+  --text-primary: #1a1a1a;
+  --text-secondary: #4a4a4a;
+  --text-muted: #6e6e6e;
+
+  --accent: #0078d4;
+  --accent-bg: rgba(0, 120, 212, 0.12);
+  --accent-hover: #1a8ae8;
+  --success: #2eb872;
+  --success-hover: #259c5f;
+  --warning: #b8860b;
+  --error: #d13438;
+  --info: #0078d4;
+  --text-on-accent: #ffffff;
+  --text-on-success: #000000;
+
+  --diff-add: #16a34a;
+  --diff-add-bg: rgba(22, 163, 74, 0.12);
+  --diff-del: #dc2626;
+  --diff-del-bg: rgba(220, 38, 38, 0.12);
+  --diff-mod: #b45309;
+  --diff-mod-bg: rgba(180, 83, 9, 0.12);
+  --diff-error: #dc2626;
+
+  --level-predicate: #7c3aed;
+
+  --overlay-bg: rgba(0, 0, 0, 0.4);
+  --overlay-shadow: rgba(0, 0, 0, 0.2);
+  --success-bg: rgba(46, 184, 114, 0.12);
+  --success-border: rgba(46, 184, 114, 0.3);
+  --error-bg: rgba(209, 52, 56, 0.1);
+  --error-border: rgba(209, 52, 56, 0.25);
+
+  --syn-keyword: #0000ff;
+  --syn-string: #a31515;
+  --syn-number: #098658;
+  --syn-comment: #008000;
+  --syn-function: #795e26;
+  --syn-operator: #1a1a1a;
+  --syn-table: #001080;
+}
+
+/* High Contrast Theme Override */
+.theme-high-contrast {
+  --bg-app: #000000;
+  --bg-surface: #0d0d0d;
+  --bg-surface-elevated: #1a1a1a;
+  --bg-surface-hover: #1a1a1a;
+  --bg-elevated: #1a1a1a;
+  --border: #666666;
+  --text-primary: #ffffff;
+  --text-secondary: #cccccc;
+  --text-muted: #999999;
+  --accent: #40a6ff;
+  --accent-bg: rgba(64, 166, 255, 0.25);
+  --accent-hover: #60b8ff;
+  --success: #6edc6e;
+  --success-hover: #8ee88e;
+  --warning: #ffff66;
+  --error: #ff6666;
+  --info: #66b3ff;
+  --syn-keyword: #66b3ff;
+  --syn-string: #ff9966;
+  --syn-number: #99cc66;
+  --syn-comment: #66cc66;
+  --syn-function: #ffff99;
+  --syn-operator: #ffffff;
+  --syn-table: #66ccff;
+  --text-on-accent: #000000;
+  --text-on-success: #000000;
+
+  --diff-add: #6edc6e;
+  --diff-add-bg: rgba(110, 220, 110, 0.2);
+  --diff-del: #ff6666;
+  --diff-del-bg: rgba(255, 102, 102, 0.2);
+  --diff-mod: #ffff66;
+  --diff-mod-bg: rgba(255, 255, 102, 0.2);
+  --diff-error: #ff6666;
+
+  --level-predicate: #bb86fc;
+
+  --overlay-bg: rgba(0, 0, 0, 0.75);
+  --overlay-shadow: rgba(0, 0, 0, 0.6);
+  --success-bg: rgba(110, 220, 110, 0.18);
+  --success-border: rgba(110, 220, 110, 0.4);
+  --error-bg: rgba(255, 102, 102, 0.18);
+  --error-border: rgba(255, 102, 102, 0.4);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--text-primary);
+  background: var(--bg-app);
+  -webkit-font-smoothing: antialiased;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}

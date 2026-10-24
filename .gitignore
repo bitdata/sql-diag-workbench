@@ -1,0 +1,61 @@
+# Dependencies
+node_modules/
+
+# Build output
+out/
+dist/
+build/
+
+# Electron-builder output
+release/
+
+# Backend
+backend/target/
+backend/out/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.claude/
+.agents/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.local
+
+# Logs
+*.log
+
+# Test coverage
+coverage/
+
+# Java
+*.class
+*.jar
+*.war
+*.nar
+*.ear
+
+# JVM crash logs
+hs_err_pid*
+replay_pid*
+
+.gstack/
+.playwright-mcp/
+
+# Worktrees (isolated development workspaces)
+.worktrees/
+
+
+# Test database config (AI integration tests only — do NOT commit real credentials)
+test-databases.json
+
+# Playwright artifacts (E2E runs)
+test-results/
+test-results-electron/
+playwright-report/

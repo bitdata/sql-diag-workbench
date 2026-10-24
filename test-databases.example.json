@@ -1,0 +1,85 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Test Databases Configuration",
+  "description": "本文件供 AI 集成测试使用。复制为 test-databases.json（gitignored）后填入真实凭据。schema 内嵌在顶层，本文件即是 schema+示例。",
+  "type": "object",
+  "required": ["databases"],
+  "properties": {
+    "databases": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/database" }
+    }
+  },
+  "definitions": {
+    "database": {
+      "type": "object",
+      "required": ["name", "dialect", "host", "port", "database", "username", "password"],
+      "properties": {
+        "name":        { "type": "string",  "description": "连接的可读名称（用户标识）" },
+        "dialect":     { "enum": ["postgresql", "mysql", "sqlserver", "oracle", "sqlite"] },
+        "host":        { "type": "string",  "description": "DB 主机；sqlite 时取占位字符串（如 embedded）" },
+        "port":        { "type": "integer", "description": "DB 端口；sqlite 时取 0" },
+        "database":    { "type": "string",  "description": "DB 名；sqlite 此项为 .db 文件绝对路径" },
+        "username":    { "type": "string",  "description": "DB 用户名；sqlite 时取空字符串" },
+        "password":    { "type": "string",  "description": "明文——仅用于集成测试，不进生产；sqlite 时取空字符串" },
+        "trustServerCertificate": { "type": "boolean", "description": "sqlserver 专用" },
+        "connectionType":         { "type": "string",  "enum": ["sid", "service_name"], "description": "oracle 专用" },
+        "notes":       { "type": "string" }
+      }
+    }
+  },
+  "databases": [
+    {
+      "name": "local-postgres",
+      "dialect": "postgresql",
+      "host": "localhost",
+      "port": 5432,
+      "database": "testdb",
+      "username": "test",
+      "password": "REPLACE_ME",
+      "notes": "本地默认测试 PG，AI 集成测试首选"
+    },
+    {
+      "name": "local-mysql",
+      "dialect": "mysql",
+      "host": "localhost",
+      "port": 3306,
+      "database": "testdb",
+      "username": "test",
+      "password": "REPLACE_ME",
+      "notes": "本地 MySQL"
+    },
+    {
+      "name": "local-sqlserver",
+      "dialect": "sqlserver",
+      "host": "localhost",
+      "port": 1433,
+      "database": "testdb",
+      "username": "sa",
+      "password": "REPLACE_ME",
+      "trustServerCertificate": true,
+      "notes": "MSSQL：trustServerCertificate=true 跳过证书验证"
+    },
+    {
+      "name": "local-oracle",
+      "dialect": "oracle",
+      "host": "localhost",
+      "port": 1521,
+      "database": "ORCLPDB1",
+      "username": "test",
+      "password": "REPLACE_ME",
+      "connectionType": "service_name",
+      "notes": "Oracle service_name 模式"
+    },
+    {
+      "name": "local-sqlite",
+      "dialect": "sqlite",
+      "host": "embedded",
+      "port": 0,
+      "database": "C:/tmp/test.db",
+      "username": "",
+      "password": "",
+      "notes": "SQLite 文件路径模式；host/port/username/password 通常无意义"
+    }
+  ]
+}

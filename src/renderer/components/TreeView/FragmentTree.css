@@ -1,0 +1,364 @@
+.tree-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--space-xs) 0;
+}
+
+/* Skeleton loading */
+.tree-loading {
+  padding: var(--space-xs) var(--space-sm);
+}
+
+.tree-skeleton-node {
+  display: flex;
+  align-items: center;
+  height: var(--tree-node-height);
+  gap: var(--space-sm);
+  padding: 0 var(--space-sm);
+  margin-bottom: 1px;
+}
+
+.skeleton-icon {
+  width: 16px;
+  height: 16px;
+  background: var(--bg-surface-elevated);
+  border-radius: 2px;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+.skeleton-label {
+  height: 10px;
+  background: var(--bg-surface-elevated);
+  border-radius: 2px;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.7; }
+}
+
+/* Error state */
+.tree-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-md);
+  gap: var(--space-sm);
+  text-align: center;
+}
+
+.tree-error .error-icon {
+  font-size: 20px;
+  color: var(--error);
+}
+
+.tree-error .error-message {
+  font-size: 12px;
+  color: var(--error);
+  word-break: break-word;
+}
+
+.retry-btn {
+  height: var(--button-height-sm);
+  padding: 0 var(--space-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.retry-btn:hover {
+  background: var(--bg-surface-elevated);
+}
+
+/* Empty state */
+.tree-warning {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  border-left: 3px solid var(--warning);
+  color: var(--text-secondary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.tree-warning strong { color: var(--warning); }
+.tree-warning pre { white-space: pre-wrap; }
+
+.tree-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-md);
+  gap: var(--space-xs);
+}
+
+.placeholder-text {
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.placeholder-hint {
+  color: var(--text-muted);
+  font-size: 11px;
+  text-align: center;
+  opacity: 0.7;
+}
+
+/* Tree node */
+.tree-node-group {
+  user-select: none;
+}
+
+.tree-node {
+  display: flex;
+  align-items: center;
+  height: var(--tree-node-height);
+  padding-right: var(--space-sm);
+  --tree-depth: 0;
+  padding-left: calc(var(--tree-node-padding) + var(--tree-depth) * var(--tree-indent-per-level));
+  gap: var(--space-xs);
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  transition: background-color 80ms ease;
+  margin: 1px 0;
+  border-radius: var(--radius);
+}
+
+.tree-node:hover {
+  background: var(--bg-surface-hover);
+}
+
+.tree-node.selected {
+  background: var(--accent-bg);
+  border-left-color: var(--accent);
+}
+
+.tree-node:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.tree-chevron {
+  width: var(--tree-icon-size);
+  height: var(--tree-icon-size);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  transition: transform 200ms ease;
+}
+
+.tree-chevron.expanded {
+  transform: rotate(0deg);
+}
+
+.tree-chevron.collapsed {
+  transform: rotate(-90deg);
+}
+
+.tree-chevron.hidden {
+  visibility: hidden;
+}
+
+.tree-node-icon {
+  font-size: 14px;
+  width: var(--tree-icon-size);
+  height: var(--tree-icon-size);
+  text-align: center;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tree-node-icon.muted {
+  opacity: 0.4;
+}
+
+.tree-node-label {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+.tree-node-badge {
+  font-family: var(--font-ui);
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+  padding: 0 4px;
+}
+
+.tree-children {
+  /* children indent is handled by paddingLeft on each node */
+}
+
+/* Spinner for decomposing state */
+.tree-node-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Context menu — powered by Radix UI */
+.context-menu {
+  background: var(--bg-surface, #1a1a1a);
+  border: 1px solid var(--border, #333);
+  border-radius: var(--radius, 4px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  min-width: 180px;
+  padding: var(--space-xs, 4px) 0;
+  animation: context-menu-in 80ms ease-out;
+}
+
+@keyframes context-menu-in {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm, 8px);
+  width: 100%;
+  padding: var(--space-xs, 4px) var(--space-sm, 8px);
+  border: none;
+  background: none;
+  color: var(--text-primary, #e0e0e0);
+  font-family: var(--font-ui, sans-serif);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  outline: none;
+  user-select: none;
+}
+
+.context-menu-item[data-highlighted] {
+  background: var(--bg-surface-elevated, #2a2a2a);
+}
+
+.context-menu-item[data-disabled] {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.context-menu-icon {
+  font-size: 12px;
+  width: 16px;
+  text-align: center;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.context-menu-separator,
+.context-menu-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 2px var(--space-xs);
+}
+
+.context-menu-label {
+  padding: var(--space-xs, 4px) var(--space-sm, 8px);
+  font-family: var(--font-ui, sans-serif);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.context-menu-loading {
+  padding: var(--space-xs, 4px) var(--space-sm, 8px);
+  font-family: var(--font-ui, sans-serif);
+  font-size: 10px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.context-menu-icon {
+  font-size: 12px;
+  width: 16px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+/* 树根的原 SQL 标注（spec §4.3.4 #2）：只挂在显示树的根行上 —— 根就是 DAG 根时
+   写「原 SQL」，否则写「未还原到原 SQL」。与 .tree-node-badge / .tree-node-edit-mark
+   同级并列，不嵌套。 */
+.tree-node-origin-mark {
+  flex-shrink: 0;
+  margin-left: 6px;
+  padding: 0 4px;
+  border: 1px solid var(--accent-border, #3a6ea5);
+  border-radius: 3px;
+  color: var(--accent, #6ea8fe);
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+/* 编辑标记：跨投影存活（spec §6.5）——它按节点 id 查表，而加回投影复用真 id，
+   所以自上而下 / 自下而上切换、换 Tab 回来都还在。 */
+.tree-node-edit-mark {
+  flex-shrink: 0;
+  max-width: 18ch;
+  overflow: hidden;
+  margin-left: 6px;
+  padding: 0 4px;
+  border: 1px solid var(--warning, #d9a441);
+  border-radius: 3px;
+  background: none;
+  color: var(--warning, #d9a441);
+  font-size: 11px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+span.tree-node-edit-mark {
+  cursor: default;
+}
+
+/* 身份降级标记（ADR-0001）：id 取自 raw 文本，等价改写不会被识别为同一片段。
+   视觉类比 .tree-node-edit-mark（--warning 描边）；文字承载语义，不单靠颜色。 */
+.tree-node-degraded-mark {
+  flex-shrink: 0;
+  margin-left: 6px;
+  padding: 0 4px;
+  border: 1px solid var(--warning, #d9a441);
+  border-radius: 3px;
+  color: var(--warning, #d9a441);
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+  /* 非交互旁注：.tree-node 行设了 cursor: pointer，不覆盖会让标签广告一次无效点击
+     （同 span.tree-node-edit-mark 的覆盖理由）。 */
+  cursor: default;
+}

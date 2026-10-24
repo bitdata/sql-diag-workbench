@@ -1,0 +1,101 @@
+/* NodeTooltip — rendered via Radix Tooltip Portal */
+[data-radix-popper-content-wrapper]:has(.node-tooltip) {
+  pointer-events: none;
+}
+
+.node-tooltip {
+  z-index: 1000;
+  min-width: 260px;
+  max-width: 400px;
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  padding: 10px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  pointer-events: none;
+  animation: tooltip-fade-in 150ms ease-out;
+}
+
+.node-tooltip-arrow {
+  fill: var(--bg-surface-elevated);
+}
+
+@keyframes tooltip-fade-in {
+  from {
+    opacity: 0;
+    transform: translateX(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.node-tooltip-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-xs);
+}
+
+.node-tooltip-icon {
+  font-size: 14px;
+}
+
+.node-tooltip-type {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.node-tooltip-sql {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: var(--bg-app);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: var(--space-xs);
+  margin-bottom: var(--space-xs);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 80px;
+  overflow-y: auto;
+  line-height: 1.4;
+}
+
+.node-tooltip-meta {
+  display: flex;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.node-tooltip-stat {
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--bg-surface);
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
+.node-tooltip-degraded {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border, #333);
+}
+
+.node-tooltip-degraded-line {
+  color: var(--warning, #d9a441);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.node-tooltip-degraded-note {
+  margin-top: 2px;
+  color: var(--text-muted, #888);
+  font-size: 10px;
+  white-space: normal;
+}

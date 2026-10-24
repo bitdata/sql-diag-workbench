@@ -1,0 +1,38 @@
+/* ResultsPanel — tabs powered by Radix UI */
+/* Base .tab-bar, .tab styles inherited from App.css */
+
+/* Radix Tabs: active state via data attribute instead of .active class */
+.tab[data-state="active"] {
+  color: var(--text-primary);
+  border-bottom-color: var(--accent);
+}
+
+/* Radix Tabs: remove default focus outline, add custom */
+.tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* Tab content: fill remaining space */
+.tab-content {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Radix Tabs sets hidden attr on inactive panels, but our display:flex overrides
+   the browser default [hidden]{display:none}. Restore it. */
+.tab-content[hidden], .tab-content[data-state="inactive"] {
+  display: none;
+}
+
+.tab-content:focus {
+  outline: none;
+}
+
+/* Keep the trace and independent source form in one reachable scroll region. */
+.row-trace-workspace { overflow-y: auto; }
+.row-trace-workspace > * { flex-shrink: 0; }
+.row-trace-workspace > .row-trace-panel { flex: none; overflow: visible; }
