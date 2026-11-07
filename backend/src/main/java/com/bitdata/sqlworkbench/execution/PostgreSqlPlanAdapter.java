@@ -32,7 +32,7 @@ public class PostgreSqlPlanAdapter implements ExplainService {
 
     @Override
     public PlanNode parse(String explainJson, String dialect) {
-        if (explainJson == null || explainJson.isBlank()) {
+        if (PlanLimits.jsonInputError(explainJson) != null) {
             return null;
         }
         try {
@@ -40,7 +40,8 @@ public class PostgreSqlPlanAdapter implements ExplainService {
             if (root.isArray() && !root.isEmpty()) {
                 JsonNode planNode = root.get(0).get("Plan");
                 if (planNode != null) {
-                    return parseNode(planNode, "$[0].Plan");
+                    var plan=parseNode(planNode, "$[0].Plan");
+                    return PlanLimits.treeError(plan)==null?plan:null;
                 }
             }
             return null;

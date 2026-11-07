@@ -2,6 +2,7 @@ package com.bitdata.sqlworkbench.sql.decompose;
 
 import com.bitdata.sqlworkbench.fragment.FragmentIdentity;
 import com.bitdata.sqlworkbench.sql.NodeToSql;
+import com.bitdata.sqlworkbench.sql.SqlSerializationException;
 import com.bitdata.sqlworkbench.sql.DialectProfile;
 import com.bitdata.sqlworkbench.sql.SqlDialectResolver;
 import com.bitdata.sqlworkbench.sql.diff.SqlCanonicalizer;
@@ -99,7 +100,7 @@ public class DecompositionRuleEngine {
                     options.add(new DecomposeOption(rule.name(),rule.displayName(),rule.description(),rule.level()));
             } catch (Exception e) {
                 failed++;
-                issues.add(new Issue("RULE_FAILED",degradationMarker(e),rule.name(),"query",null,null));
+                issues.add(ruleFailure(e,rule.name(),"query",null,null));
                 options.add(new DecomposeOption(rule.name(),rule.displayName(),rule.description(),rule.level()));
             }
         }
@@ -130,11 +131,11 @@ public class DecompositionRuleEngine {
                     Effect effect=ExperimentEffects.describe(original,target,sourceSql,df.sqlFragment(),resolver.getProfile(dialect),df.effect());
                     children.add(child); outputs.add(new Output(parentId,ruleName,child.id(),i+1,effect));
                     nestedOutputs(child,outputs,issues,dialect);
-                } catch(Exception e) { issues.add(new Issue("RULE_FAILED",degradationMarker(e),ruleName,"query/output["+(i+1)+"]",null,df.sqlFragment())); }
+                } catch(Exception e) { issues.add(ruleFailure(e,ruleName,"query/output["+(i+1)+"]",null,df.sqlFragment())); }
             }
             return new Batch(issues.isEmpty()?(children.isEmpty()?"NOT_APPLICABLE":"COMPLETE"):"PARTIAL",children,outputs,issues);
         } catch(Exception e) {
-            return new Batch("FAILED",List.of(),List.of(),List.of(new Issue("RULE_FAILED",degradationMarker(e),ruleName,"query",parentId,null)));
+            return new Batch("FAILED",List.of(),List.of(),List.of(ruleFailure(e,ruleName,"query",parentId,null)));
         }
     }
     private boolean hasOffsetWithoutLimit(SqlNode node) {
@@ -342,10 +343,18 @@ public class DecompositionRuleEngine {
      * exactly the hole spec §7 closes.
      */
     static String degradationMarker(Exception failure) {
+        var unsupported = SqlSerializationException.find(failure);
+        if (unsupported != null) return unsupported.reason();
         String message = failure.getMessage();
         return (message != null && !message.isBlank())
             ? message
             : failure.getClass().getSimpleName();
+    }
+
+    private static Issue ruleFailure(Exception failure,String rule,String path,String id,String sql) {
+        var unsupported=SqlSerializationException.find(failure);
+        return new Issue(unsupported == null ? "RULE_FAILED" : SqlSerializationException.CODE,
+            degradationMarker(failure),rule,path,id,sql);
     }
 
     private String canonicalizeSafely(String sql, String dialect) {

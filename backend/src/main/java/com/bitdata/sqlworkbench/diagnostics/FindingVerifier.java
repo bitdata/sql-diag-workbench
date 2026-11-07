@@ -80,9 +80,11 @@ public class FindingVerifier {
             }
         } catch (com.bitdata.sqlworkbench.connection.CredentialFailure e) {
             return new VerifyResult(FindingStatus.SUSPECTED,e.getMessage(),e.code,true);
+        } catch (com.bitdata.sqlworkbench.connection.WorkloadBusyException e) {
+            return new VerifyResult(FindingStatus.SUSPECTED,e.getMessage(),e.errorReason(),true);
         } catch (Exception e) {
             log.warn("Verification failed for connection {}: {}", connectionId, e.getMessage());
-            return new VerifyResult(FindingStatus.SUSPECTED, "Error: " + e.getMessage());
+            return new VerifyResult(FindingStatus.SUSPECTED, "Error: " + e.getMessage(),"VERIFICATION_FAILED",true);
         }
     }
 }

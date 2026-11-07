@@ -74,6 +74,13 @@ public class SqlParseService {
             ParseResult result = new ParseResult(root, options.options(), Collections.emptyList(), options.scan());
             if (!connected && "COMPLETE".equals(options.scan().status())) cache.put(cacheKey, result);
             return result;
+        } catch (RuntimeException e) {
+            var unsupported = SqlSerializationException.find(e);
+            if (unsupported == null) throw e;
+            return new ParseResult(null, List.of(), List.of(new ParseResult.ParseError(
+                SqlSerializationException.CODE, unsupported.reason(), null)),
+                new DecompositionResult.Scan("FAILED", List.of(new DecompositionResult.Issue(
+                    SqlSerializationException.CODE, unsupported.reason(), null, "query", null, request.sql()))));
         } catch (SqlParseException e) {
             log.warn("SQL parse error: {}", e.getMessage());
             if (e.getPos() != null) {
@@ -172,7 +179,7 @@ public class SqlParseService {
                 .toList();
             return new JoinDiffResponse(entries);
         } catch (Exception e) {
-            return new JoinDiffResponse(List.of(),true,e.getMessage()==null?e.getClass().getSimpleName():e.getMessage());
+            return new JoinDiffResponse(List.of(),true,serializationReason(e));
         }
     }
 
@@ -236,7 +243,7 @@ public class SqlParseService {
                 default -> new FragmentDiffRequest.FragmentDiffResponse(null, null, null);
             };
         } catch (Exception e) {
-            return new FragmentDiffRequest.FragmentDiffResponse(null,null,null,true,e.getMessage()==null?e.getClass().getSimpleName():e.getMessage());
+            return new FragmentDiffRequest.FragmentDiffResponse(null,null,null,true,serializationReason(e));
         }
     }
 
@@ -278,6 +285,12 @@ public class SqlParseService {
         if (!resolver.isSupported(dialect)) {
             throw new IllegalArgumentException("Unsupported dialect: " + dialect);
         }
+    }
+
+    private static String serializationReason(Exception failure) {
+        var unsupported=SqlSerializationException.find(failure);
+        return unsupported != null ? unsupported.reason()
+            : failure.getMessage()==null ? failure.getClass().getSimpleName() : failure.getMessage();
     }
 
     private ParseResult.ParseError mapParseError(SqlParseException e) {

@@ -15,6 +15,12 @@ import org.springframework.web.bind.annotation.*;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.Collections;
+import com.bitdata.sqlworkbench.diagnostics.mapping.PlanSqlMapping;
+import com.bitdata.sqlworkbench.diagnostics.mapping.PlanSqlMappingService;
+import com.bitdata.sqlworkbench.connection.DatabaseStrategyFactory;
+import com.bitdata.sqlworkbench.sql.SqlDialectResolver;
+import com.bitdata.sqlworkbench.sql.SqlPositionService;
 
 /**
  * REST controller for diagnostic analysis.
@@ -36,9 +42,29 @@ public class DiagnosticsController {
     private final DiagnosticReportStore reportStore;
     private final ObjectMapper objectMapper;
     private final FindingVerifier findingVerifier;
+    private final PlanSqlMappingService planSqlMappingService;
     @org.springframework.beans.factory.annotation.Autowired
     private com.bitdata.sqlworkbench.execution.ExecutionEngine executionEngine;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    public DiagnosticsController(
+            RuleRegistry ruleRegistry,
+            RowTraceEngine traceEngine,
+            TraceStore traceStore,
+            DiagnosticReportStore reportStore,
+            ObjectMapper objectMapper,
+            FindingVerifier findingVerifier,
+            PlanSqlMappingService planSqlMappingService) {
+        this.ruleRegistry = ruleRegistry;
+        this.traceEngine = traceEngine;
+        this.traceStore = traceStore;
+        this.reportStore = reportStore;
+        this.objectMapper = objectMapper;
+        this.findingVerifier = findingVerifier;
+        this.planSqlMappingService = planSqlMappingService;
+    }
+
+    /** Backward-compatible constructor for focused controller tests and embedders. */
     public DiagnosticsController(
             RuleRegistry ruleRegistry,
             RowTraceEngine traceEngine,
@@ -46,12 +72,9 @@ public class DiagnosticsController {
             DiagnosticReportStore reportStore,
             ObjectMapper objectMapper,
             FindingVerifier findingVerifier) {
-        this.ruleRegistry = ruleRegistry;
-        this.traceEngine = traceEngine;
-        this.traceStore = traceStore;
-        this.reportStore = reportStore;
-        this.objectMapper = objectMapper;
-        this.findingVerifier = findingVerifier;
+        this(ruleRegistry, traceEngine, traceStore, reportStore, objectMapper, findingVerifier,
+            new PlanSqlMappingService(new SqlPositionService(
+                new SqlDialectResolver(DatabaseStrategyFactory.withBuiltinStrategies()))));
     }
 
     public record AnalyzeRequest(
@@ -88,10 +111,53 @@ public class DiagnosticsController {
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
+    // Original-text observation uses the same retained server receipt, without a DAG node.
     public ResponseEntity<?> invalidAnalysis(IllegalArgumentException failure) {
         return ResponseEntity.badRequest().body(java.util.Map.of("code","VALIDATION_ERROR","errorReason","VALIDATION_ERROR",
             "degraded",true,"message","Invalid fragment or diagnostic identity"));
     }
+
+    public record PlanRequest(String executionId,String sql,String connectionId,String sessionId) {}
+
+    @PostMapping("/plan")
+    public AnalyzeResponse analyzePlan(@RequestBody PlanRequest request) {
+        if(request.executionId()==null||request.executionId().isBlank()||request.sql()==null||request.sql().isBlank()||request.connectionId()==null||request.connectionId().isBlank())
+            throw new IllegalArgumentException("Plan execution, exact SQL and connection are required");
+        var observation=executionEngine.resolvePlanObservation(request.executionId(),request.sql(),request.connectionId(),request.sessionId());
+        var subject=new FragmentNode("plan-execution:"+request.executionId(),com.bitdata.sqlworkbench.sql.model.FragmentType.ORIGINAL,"Submitted SQL",request.sql(),true,null,0,null,List.of());
+        var evaluated=ruleRegistry.evaluate(subject,observation,request.executionId());
+        var findings=evaluated.findings().stream().map(DiagnosticFinding::withoutFragment).toList();
+        var persistence=new AnalyzeRequest(subject,null,null,request.sessionId(),null,request.executionId(),request.connectionId());
+        return new AnalyzeResponse(findings,persistReport(persistence,findings,evaluated.evaluation()),evaluated.evaluation());
+    }
+
+    public record MappingRequest(String executionId, String sql, String dialect, String connectionId, String sessionId,
+                                 FragmentNode fragment, List<DiagnosticFinding> findings) {}
+
+    /** Return an execution-scoped, additive plan → SQL/fragment/evidence mapping. */
+    @PostMapping("/plan-mapping")
+    public PlanSqlMapping planMapping(@RequestBody MappingRequest request) {
+        if (request == null || request.executionId() == null || request.executionId().isBlank()
+            || request.sql() == null || request.sql().isBlank()
+            || request.connectionId() == null || request.connectionId().isBlank()
+            || !java.util.Set.of("postgresql", "mysql").contains(request.dialect() == null ? "" : request.dialect())) {
+            throw new IllegalArgumentException("executionId, exact SQL and connection are required");
+        }
+        var observation = executionEngine.resolvePlanObservation(
+            request.executionId(), request.sql(), request.connectionId(), request.sessionId());
+        String dialect = request.dialect();
+        if (!"VERIFIED".equals(observation.sourceState()) || observation.result() == null) {
+            String reason = observation.errorReason() == null ? "PLAN_SOURCE_UNAVAILABLE" : observation.errorReason();
+            var unavailable = planSqlMappingService.map(request.executionId(), dialect, request.sql(), null,
+                request.fragment(), request.findings() == null ? Collections.emptyList() : request.findings());
+            return new PlanSqlMapping(unavailable.version(), unavailable.executionId(), unavailable.captureKey(),
+                unavailable.dialect(), unavailable.submittedSqlSha256(), unavailable.edges(), true, reason,
+                List.of(new PlanSqlMapping.MappingIssue(reason, null, "retained plan observation is " + observation.sourceState())));
+        }
+        return planSqlMappingService.map(request.executionId(), dialect, request.sql(), observation.result(),
+            request.fragment(), request.findings() == null ? Collections.emptyList() : request.findings());
+    }
+
 
     @PostMapping("/trace-async")
     public ResponseEntity<?> submitTrace(@RequestBody TraceRequest request) {
@@ -173,7 +239,7 @@ public class DiagnosticsController {
     }
 
     private ExecutionResult.Persistence persistReport(AnalyzeRequest request, List<DiagnosticFinding> findings, Evaluation evaluation) {
-        if (request.sessionId() == null || request.fragmentId() == null) {
+        if (request.sessionId() == null || (request.fragmentId() == null && request.executionId() == null)) {
             return new ExecutionResult.Persistence("not_requested",null);
         }
         try {

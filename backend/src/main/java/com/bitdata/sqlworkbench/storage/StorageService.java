@@ -18,7 +18,7 @@ public class StorageService {
                        boolean degraded, String errorReason) {}
     public record Candidate(String id, String name, String updatedAt, long estimatedBytes) {}
     public record Preview(long revision, Policy policy, Size size, long protectedSessions, long unknownSessions,
-                          Map<String,Long> expiredCounts, List<Candidate> unknown, boolean degraded, String errorReason) {}
+                          Map<String,Long> expiredCounts, List<Candidate> unknown, boolean degraded, String errorReason, long protectedSnapshots) {}
     public record Job(String id, String trigger, String status, String phase, long policyRevision, Map<String,Integer> deleted,
                       Size before, Size after, boolean targetMet, boolean degraded, String errorReason, List<String> skippedReasons) {}
     public static class Failure extends RuntimeException {
@@ -33,7 +33,9 @@ public class StorageService {
     private volatile boolean cancel;
     private volatile Job job;
     private volatile String schedulerError;
-    private static final Map<String,String> TIME = Map.of("sessions","updated_at","history","executed_at","diagnostic_reports","created_at","edit_audit","classified_at");
+    private volatile long expiredReceiptsDeleted;
+    private volatile String receiptCleanupError;
+    private static final Map<String,String> TIME = Map.of("sessions","updated_at","history","executed_at","diagnostic_reports","created_at","edit_audit","classified_at","optimization_validation_reports","created_at","optimization_experiment_reports","created_at","investigation_snapshots","created_at");
     private static final String SESSION_SAFE = "EXISTS(SELECT 1 FROM storage_reclaimable r WHERE r.session_id=s.id) AND NOT EXISTS(SELECT 1 FROM storage_protection p WHERE p.session_id=s.id)";
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -98,12 +100,15 @@ public class StorageService {
     private String safe(String table) {
         if(table.equals("sessions")) return SESSION_SAFE;
         if(table.equals("history")) return "1=1";
+        if(table.equals("investigation_snapshots")) return "NOT EXISTS(SELECT 1 FROM investigation_snapshot_protection p WHERE p.snapshot_id=s.id)";
+        if(table.equals("plan_observation_receipts")) return "finalized_snapshot_id IS NULL";
         return "(NOT EXISTS(SELECT 1 FROM sessions owner WHERE owner.id=s.session_id) OR EXISTS(SELECT 1 FROM storage_reclaimable r WHERE r.session_id=s.session_id)) AND NOT EXISTS(SELECT 1 FROM storage_protection p WHERE p.session_id=s.session_id)";
     }
     public Preview preview() {
         Policy policy=policy(); String threshold=clock.instant().minusSeconds(policy.retentionDays()*86400L).toString();
         Map<String,Long> counts=new TreeMap<>();
         for(var entry:TIME.entrySet()) counts.put(entry.getKey(),jdbc.queryForObject("SELECT count(*) FROM "+entry.getKey()+" s WHERE "+safe(entry.getKey())+" AND julianday("+entry.getValue()+")<julianday(?)",Long.class,threshold));
+        counts.put("plan_observation_receipts",jdbc.queryForObject("SELECT count(*) FROM plan_observation_receipts WHERE julianday(expires_at)<=julianday(?)",Long.class,clock.instant().toString()));
         var unknown=jdbc.query("SELECT id,name,updated_at,length(CAST(sql_text AS BLOB))+COALESCE(length(CAST(workspace_snapshot_json AS BLOB)),0)+COALESCE(length(CAST(fragment_tree_json AS BLOB)),0) AS bytes FROM sessions s WHERE NOT EXISTS(SELECT 1 FROM storage_protection p WHERE p.session_id=s.id) AND NOT EXISTS(SELECT 1 FROM storage_reclaimable r WHERE r.session_id=s.id) ORDER BY updated_at,id LIMIT 200",
             (r,n)->new Candidate(r.getString("id"),r.getString("name"),r.getString("updated_at"),r.getLong("bytes")));
         long protectedCount=jdbc.queryForObject("SELECT count(*) FROM sessions s WHERE EXISTS(SELECT 1 FROM storage_protection p WHERE p.session_id=s.id)",Long.class);
@@ -111,13 +116,16 @@ public class StorageService {
         boolean invalid=false;
         for(var entry:TIME.entrySet()) if(jdbc.queryForObject("SELECT count(*) FROM "+entry.getKey()+" WHERE julianday("+entry.getValue()+") IS NULL",Long.class)>0) invalid=true;
         Size size=measure();
-        return new Preview(generation(),policy,size,protectedCount,unknownCount,counts,unknown,invalid||size.degraded(),invalid?"INVALID_RETENTION_TIMESTAMP":size.errorReason());
+        long pinned = jdbc.queryForObject("SELECT count(*) FROM investigation_snapshot_protection",Long.class);
+        return new Preview(generation(),policy,size,protectedCount,unknownCount,counts,unknown,invalid||size.degraded(),invalid?"INVALID_RETENTION_TIMESTAMP":size.errorReason(),pinned);
     }
     public Map<String,Object> status() {
         Map<String,Object> result=new LinkedHashMap<>();
         result.put("policy",policy()); result.put("size",measure()); result.put("protectionReady",protectionReady);
-        result.put("job",job); result.put("degraded",!protectionReady||schedulerError!=null);
-        result.put("errorReason",schedulerError!=null?schedulerError:!protectionReady?"PROTECTION_UNCONFIRMED":null);
+        result.put("expiredReceiptsDeleted",expiredReceiptsDeleted); result.put("receiptCleanupError",receiptCleanupError);
+        result.put("expiredReceiptsPending",jdbc.queryForObject("SELECT count(*) FROM plan_observation_receipts WHERE julianday(expires_at)<=julianday(?)",Long.class,clock.instant().toString()));
+        result.put("job",job); result.put("degraded",!protectionReady||schedulerError!=null||receiptCleanupError!=null);
+        result.put("errorReason",receiptCleanupError!=null?receiptCleanupError:schedulerError!=null?schedulerError:!protectionReady?"PROTECTION_UNCONFIRMED":null);
         return result;
     }
     public synchronized Job start(long expected, String trigger) {
@@ -145,7 +153,7 @@ public class StorageService {
             if(size.degraded()) throw new Failure(503,"SIZE_UNAVAILABLE","Storage size cannot be measured.");
             publish(original,"running","retention",counts,size,false,null,skipped);
             for(var entry:TIME.entrySet()) if(jdbc.queryForObject("SELECT count(*) FROM "+entry.getKey()+" WHERE julianday("+entry.getValue()+") IS NULL",Long.class)>0 && !skipped.contains("INVALID_RETENTION_TIMESTAMP")) skipped.add("INVALID_RETENTION_TIMESTAMP");
-            for(String table:List.of("history","diagnostic_reports","edit_audit","sessions")) {
+            for(String table:List.of("plan_observation_receipts","history","diagnostic_reports","optimization_validation_reports","optimization_experiment_reports","edit_audit","investigation_snapshots","sessions")) {
                 while(!stopped(policy)) {
                     Batch batch=deleteBatch(table,policy,true);
                     int changed=batch.changed();
@@ -162,7 +170,7 @@ public class StorageService {
                 // Reclaim empty pages before evicting any younger records.
                 while(!size.degraded() && size.totalBytes()>target && !stopped(policy) && !skipped.contains("COMPACTION_DEFERRED")) {
                     int changed=0;
-                    for(String table:List.of("history","diagnostic_reports","edit_audit","sessions")) {
+                    for(String table:List.of("plan_observation_receipts","history","diagnostic_reports","optimization_validation_reports","optimization_experiment_reports","edit_audit","investigation_snapshots","sessions")) {
                         Batch batch=deleteBatch(table,policy,false);
                         int n=batch.changed(); changed+=n; batch.deleted().forEach((key,count)->counts.merge(key,count,Integer::sum));
                         if(n>0) break;
@@ -188,20 +196,29 @@ public class StorageService {
             beginWrite();
             if(stopped(original)) return new Batch(0,Map.of());
             String time=TIME.get(table), threshold=clock.instant().minusSeconds(original.retentionDays()*86400L).toString();
-            String filter=safe(table)+" AND julianday("+time+") IS NOT NULL"+(expired?" AND julianday("+time+")<julianday(?)":"");
-            String query="SELECT id,"+time+" AS stamp FROM "+table+" s WHERE "+filter+" ORDER BY julianday("+time+"),id LIMIT 200";
-            var rows=expired?jdbc.queryForList(query,threshold):jdbc.queryForList(query);
+            String filter, query;
+            List<Map<String,Object>> rows;
+            if(table.equals("plan_observation_receipts")) {
+                filter=expired?"julianday(expires_at)<=julianday(?)":safe(table);
+                query="SELECT id,expires_at AS stamp FROM plan_observation_receipts WHERE "+filter+" ORDER BY julianday(expires_at),id LIMIT 200";
+                rows=expired?jdbc.queryForList(query,clock.instant().toString()):jdbc.queryForList(query);
+            } else {
+                filter=safe(table)+" AND julianday("+time+") IS NOT NULL"+(expired?" AND julianday("+time+")<julianday(?)":"");
+                query="SELECT s.id,"+time+" AS stamp FROM "+table+" s WHERE "+filter+" ORDER BY julianday("+time+"),s.id LIMIT 200";
+                rows=expired?jdbc.queryForList(query,threshold):jdbc.queryForList(query);
+            }
             int count=0;
             Map<String,Integer> deleted=new TreeMap<>();
             for(var row:rows) {
                 // SQLite's timestamp parser is also the indexed preview/cutoff parser.
                 // An additional Java parser would strand later valid rows behind a batch of legacy dates.
                 if(table.equals("sessions")) {
-                    for(String child:List.of("diagnostic_reports","edit_audit")) {
+                    for(String child:List.of("diagnostic_reports","optimization_validation_reports","optimization_experiment_reports","edit_audit")) {
                         int n=jdbc.queryForObject("SELECT count(*) FROM "+child+" WHERE session_id=?",Integer.class,row.get("id"));
                         deleted.merge(child,n,Integer::sum);
                     }
                 }
+                if(table.equals("investigation_snapshots")) jdbc.update("DELETE FROM investigation_snapshot_protection WHERE snapshot_id=?",row.get("id"));
                 count+=jdbc.update("DELETE FROM "+table+" WHERE id=?",row.get("id"));
             }
             deleted.merge(table,count,Integer::sum);
@@ -218,6 +235,17 @@ public class StorageService {
     public void scheduled() {
         try { Policy p=policy(); if(p.enabled()) start(p.revision(),"scheduled"); schedulerError=null; }
         catch(Exception error) { schedulerError=error instanceof Failure f?f.code:"CLEANUP_SCHEDULE_FAILED"; }
+    }
+    /** Receipt expiry is mandatory even when the user's general cleanup policy is disabled. */
+    @Scheduled(initialDelay=60000, fixedDelay=60000)
+    public void expireReceipts() {
+        try {
+            Integer deleted = tx.execute(s -> {
+                beginWrite();
+                return jdbc.update("DELETE FROM plan_observation_receipts WHERE id IN (SELECT id FROM plan_observation_receipts WHERE julianday(expires_at)<=julianday(?) LIMIT 200)",clock.instant().toString());
+            });
+            expiredReceiptsDeleted += deleted == null ? 0 : deleted; receiptCleanupError = null;
+        } catch (Exception failure) { receiptCleanupError = "SNAPSHOT_RECEIPT_EXPIRY_FAILED"; }
     }
     @PreDestroy public void close() { cancel=true; executor.shutdown(); }
 }

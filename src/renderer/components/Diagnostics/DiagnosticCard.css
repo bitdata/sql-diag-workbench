@@ -116,7 +116,7 @@
 }
 
 .verify-button:hover:not(:disabled) {
-  background: var(--bg-hover);
+  background: var(--bg-surface-hover);
   color: var(--text-primary);
 }
 

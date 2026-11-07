@@ -45,7 +45,8 @@ public class ConnectedColumnResolver {
             return new Resolution(copy, List.copyOf(worker.issues));
         } catch (Exception e) {
             // Preserve usable schema-free rules, but never present metadata failure as success.
-            return new Resolution(original, List.of(new Issue("SCHEMA_METADATA_UNAVAILABLE",
+            String reason=e instanceof com.bitdata.sqlworkbench.connection.WorkloadBusyException?"WORKLOAD_BUSY":"SCHEMA_METADATA_UNAVAILABLE";
+            return new Resolution(original, List.of(new Issue(reason,
                 "Could not read column metadata from the selected connection (" + e.getClass().getSimpleName() + ")",
                 null, "query", null, null)));
         }

@@ -25,6 +25,7 @@ function makeTabsApi(overrides: Partial<UseTabsApi> = {}): UseTabsApi {
   return {
     tabs: [],
     activeSessionId: null,
+    hydratingTabs: false,
     createTab: vi.fn().mockResolvedValue(undefined),
     closeTab: vi.fn(),
     renameTab: vi.fn(),
@@ -102,6 +103,26 @@ describe('useSessionLifecycle', () => {
     })
 
     expect(createTab).not.toHaveBeenCalled()
+  })
+
+  it('waits for tab hydration to finish before auto-creating a tab', () => {
+    const createTab = vi.fn().mockResolvedValue(undefined)
+    setup({
+      tabsApi: makeTabsApi({ tabs: [], activeSessionId: null, hydratingTabs: true, booting: true, createTab }),
+      activeSessionLoading: false,
+    })
+
+    expect(createTab).not.toHaveBeenCalled()
+  })
+
+  it('starts first-tab creation while booting when no persisted tabs need hydration', () => {
+    const createTab = vi.fn().mockResolvedValue(undefined)
+    setup({
+      tabsApi: makeTabsApi({ tabs: [], activeSessionId: null, hydratingTabs: false, booting: true, createTab }),
+      activeSessionLoading: false,
+    })
+
+    expect(createTab).toHaveBeenCalledOnce()
   })
 
   it('does not reparse or overwrite a tree already restored by the workspace owner', () => {

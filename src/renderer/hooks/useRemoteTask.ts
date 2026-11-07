@@ -17,7 +17,7 @@ const idle = () => ({ id: null as string | null, status: null as string | null, 
   startedAt: null as number | null })
 
 /** One task per instance. Every continuation is bound to its run and observation. */
-export function useRemoteTask<T extends TaskData>(backendUrl: string | null, scope = '') {
+export function useRemoteTask<T extends TaskData>(backendUrl: string | null, scope = '', decode?: (value: unknown) => T) {
   const [state, setState] = useState(idle)
   const current = useRef<Run<T> | null>(null)
   const mounted = useRef(true)
@@ -29,8 +29,9 @@ export function useRemoteTask<T extends TaskData>(backendUrl: string | null, sco
   const live = (run: Run<T>, observation: number) => mounted.current && current.current === run && run.observation === observation
   const read = async (run: Run<T>): Promise<T> => {
     const res = await apiFetch(`${run.url}/${encodeURIComponent(run.id!)}`)
-    if (!res.ok) throw new Error(`Status request failed (HTTP ${res.status})`)
-    const data = await res.json() as T
+    if (!res.ok) { const error = new Error(`Status request failed (HTTP ${res.status})`); if (res.status === 410 && /\/api\/optimization\/(validations|experiments)$/.test(run.url)) Object.assign(error, { taskReason: 'TASK_EXPIRED' }); throw error }
+    const raw: unknown = await res.json()
+    const data = decode ? decode(raw) : raw as T
     if (!data || !statuses.has(data.status)) throw new Error('Invalid task status response')
     return data
   }
@@ -104,7 +105,7 @@ export function useRemoteTask<T extends TaskData>(backendUrl: string | null, sco
     } catch (e) {
       if (!live(run, observation)) return
       stop(run)
-      setState(s => ({ ...s, loading: false, error: message(e), errorReason: 'STATUS_UNAVAILABLE' }))
+      setState(s => ({ ...s, loading: false, error: message(e), errorReason: (e as { taskReason?: string })?.taskReason ?? 'STATUS_UNAVAILABLE' }))
     } finally { run.pollBusy = false }
   }
   const pollRef = useRef(poll)
@@ -125,6 +126,8 @@ export function useRemoteTask<T extends TaskData>(backendUrl: string | null, sco
       const data = await res.json()
       if ((res.status === 429 && data?.code === 'EXECUTION_CAPACITY_EXHAUSTED') ||
           (path === '/api/execution/analyze' && res.status === 400 && data?.code === 'ANALYZE_VALIDATION_ERROR' && data?.errorReason === 'INVALID_ANALYZE_MODE') ||
+          (path === '/api/optimization/validations' && ((res.status === 400 && data?.code === 'OPTIMIZATION_VALIDATION_ERROR') || (res.status === 409 && data?.code === 'OPTIMIZATION_SOURCE_CHANGED'))) ||
+          (path === '/api/optimization/experiments' && ((res.status === 400 && data?.code === 'OPTIMIZATION_VALIDATION_ERROR') || (res.status === 409 && ['OPTIMIZATION_SOURCE_CHANGED','EXPERIMENT_BUSY'].includes(data?.code)))) ||
           (path === '/api/diagnostics/trace-async' && res.status === 400 && data?.code === 'TRACE_VALIDATION_ERROR')) {
         run.pending = false; run.stopped = true; run.terminal = true
         if (run.notice) dismissTaskNotice(run.notice)

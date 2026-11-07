@@ -40,7 +40,7 @@ class MySqlStrategyTest {
     @Test
     void getAnalyzeSql_returnsExplainAnalyzeFormatJson() {
         String sql = "SELECT * FROM users";
-        assertEquals("EXPLAIN ANALYZE FORMAT=JSON SELECT * FROM users",
+        assertEquals("EXPLAIN ANALYZE FORMAT=TREE SELECT * FROM users",
             strategy.getAnalyzeSql(sql));
     }
 

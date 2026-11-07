@@ -75,8 +75,10 @@ public class PhysicalSourcePlanService {
             }
         } catch(Unverified e) { return unknown(request,metadataSql,e.code); }
         catch(CredentialFailure e) { return unknown(request,metadataSql,e.code); }
+        catch(com.bitdata.sqlworkbench.connection.WorkloadBusyException e) { return unknown(request,metadataSql,e.errorReason()); }
         catch(SQLTimeoutException e) { return unknown(request,metadataSql,"SOURCE_METADATA_TIMEOUT"); }
         catch(SQLException e) { return unknown(request,metadataSql,"SOURCE_METADATA_FAILED"); }
+        catch(SqlSerializationException e) { return unknown(request,metadataSql,e.reason()); }
         catch(SqlParseException | IllegalArgumentException e) { return unknown(request,metadataSql,"SOURCE_SQL_UNSUPPORTED"); }
         catch(RuntimeException e) { return unknown(request,metadataSql,"SOURCE_PREPARATION_FAILED"); }
     }
@@ -138,6 +140,6 @@ public class PhysicalSourcePlanService {
         // Top-level LIMIT 0, never a derived-table wrapper: MySQL rewrites origin fields inside wrappers.
         select.setOffset(null);select.setFetch(null);
         SqlNode zero=new SqlOrderBy(SqlParserPos.ZERO,select,root instanceof SqlOrderBy o?o.orderList:SqlNodeList.EMPTY,null,SqlLiteral.createExactNumeric("0",SqlParserPos.ZERO));
-        return new Shape(name,schema,List.copyOf(projections),star,zero.toSqlString(resolver.getDialect(dialect)).getSql());
+        return new Shape(name,schema,List.copyOf(projections),star,NodeToSql.toQuotedSql(zero,resolver.getProfile(dialect)));
     }
 }

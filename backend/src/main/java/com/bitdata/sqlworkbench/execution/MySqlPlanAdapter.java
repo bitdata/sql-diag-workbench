@@ -60,12 +60,17 @@ public class MySqlPlanAdapter implements ExplainService {
         return "mysql";
     }
 
+    @Override public Parsed parseDetailed(String raw,String dialect,String channel) {
+        return "MYSQL_TREE".equals(channel)&&"mysql".equals(dialect)?MysqlTreePlanParser.parse(raw):ExplainService.super.parseDetailed(raw,dialect,channel);
+    }
+
     @Override
     public PlanNode parse(String explainJson,String dialect) {
-        if(explainJson==null || explainJson.isBlank()) return null;
+        if(PlanLimits.jsonInputError(explainJson)!=null) return null;
         try {
             JsonNode root=mapper.readTree(explainJson);
-            return root.has("query_block") ? block(root.get("query_block"),"$.query_block") : null;
+            var plan=root.has("query_block") ? block(root.get("query_block"),"$.query_block") : null;
+            return PlanLimits.treeError(plan)==null?plan:null;
         } catch(Exception e) { return null; } // parseDetailed exposes FAILED; never consumed as success.
     }
 

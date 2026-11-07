@@ -5,7 +5,7 @@ import type { ConnectionConfig } from '../../types/connection'
 import type { WorkspaceMode } from '../../types/mode'
 import { compareTarget, targetIssue, type CompareSource, type CompareTarget } from '../../utils/compareSources'
 import { useExecution, type ExecutionSettings } from '../../hooks/useExecution'
-import { useDiagnostics } from '../../hooks/useDiagnostics'
+import { usePlanDiagnostics } from '../../hooks/usePlanDiagnostics'
 import SqlViewer from '../Editor/SqlViewer'
 import ResultsPanel from '../Results/ResultsPanel'
 import ModeToggle from '../ModeToggle/ModeToggle'
@@ -32,13 +32,17 @@ const ComparePane = forwardRef<CompareHandle, PaneProps>(function ComparePane(pr
   const [mode, setMode] = useState<WorkspaceMode>('data')
   const issue = targetIssue(target, sources)
   const source = sources.find(s => s.sessionId === target?.sessionId)
-  const scope = JSON.stringify([target?.sessionId, target?.node.id, target?.node.sqlFragment, target?.version, connection?.id])
   const execution = useExecution(backendUrl, target?.node.id ?? null, undefined, settings, {
     sessionId: target?.sessionId ?? null, dialect: target?.dialect ?? '', connectionId: connection?.id ?? null,
     sql: target?.node.sqlFragment,
   })
-  const diagnostics = useDiagnostics(backendUrl, scope)
-  const lastPlan = useRef<unknown>(null)
+  const diagnostics = usePlanDiagnostics(backendUrl,
+    target && connection && !issue && target.dialect === connection.dialect && execution.planResult?.plan
+      && execution.provenance?.sql === target.node.sqlFragment ? {
+        kind: 'fragment', sessionId: target.sessionId, connectionId: connection.id,
+        dialect: target.dialect, revision: target.version, sql: target.node.sqlFragment,
+        result: execution.planResult, fragment: target.node,
+      } : null, mode === 'performance', locked)
   const busy = execution.loading || execution.submitting || execution.cancelling || diagnostics.loading || diagnostics.verifyingIds.size > 0
   useEffect(() => { onBusy(side, busy); return () => onBusy(side, false) }, [side, busy, onBusy])
   const mismatch = !!(target && connection && target.dialect !== connection.dialect)
@@ -47,20 +51,13 @@ const ComparePane = forwardRef<CompareHandle, PaneProps>(function ComparePane(pr
   const run = (analyzeMode: 'estimated' | 'actual' = 'estimated') => {
     if (locked || disabledReason || busy || !target || !connection) return
     if (mode === 'data') void execution.execute(target.node.sqlFragment, connection.id)
-    else { diagnostics.clear(); lastPlan.current = null; void execution.analyze(target.node.sqlFragment, connection.id, analyzeMode) }
+    else void execution.analyze(target.node.sqlFragment, connection.id, analyzeMode)
   }
   useImperativeHandle(ref, () => ({ run: () => run(), cancel: () => { void execution.cancel() } }))
   useEffect(() => {
     if (!locked && !issue) return
     if (execution.loading || execution.submitting) void execution.cancel()
-    diagnostics.clear()
   }, [locked, issue])
-  useEffect(() => {
-    const result = execution.planResult
-    if (locked || issue || !target || !result?.plan || lastPlan.current === result) return
-    lastPlan.current = result
-    void diagnostics.analyze(target.node, result.plan, result.timing, target.sessionId, { executionId: result.executionId, connectionId: connection?.id ?? null })
-  }, [execution.planResult, locked, issue, scope])
   const sourceValue = (sessionId: string, id: string, version: string) => JSON.stringify([sessionId, id, version])
   const value = target ? sourceValue(target.sessionId, target.node.id, target.version) : ''
   return <section className={`compare-pane ${props.active ? 'compare-pane-active' : ''}`} aria-label={tr("Fragment {0}", side)}
@@ -107,6 +104,9 @@ const ComparePane = forwardRef<CompareHandle, PaneProps>(function ComparePane(pr
       </span>
     </div>
     <ResultsPanel result={mode === 'data' ? execution.dataResult : execution.planResult} loading={execution.loading}
+      backendUrl={backendUrl} sessionId={target?.sessionId} connectionId={connection?.id}
+      draftScope={JSON.stringify([target?.sessionId, target?.node.id, target?.version, connection?.id, locked, issue])}
+      fragmentTreeJson={target ? JSON.stringify(target.node) : ''}
       provenance={execution.provenance ? { ...execution.provenance, connectionName: connection?.name ?? tr("Connection unavailable"), source: tr("Fragment {0}", side) } : undefined}
       error={execution.error} mode={mode} diagnostics={diagnostics} showRowTrace={false}
       onVerify={(id, sql) => { if (!locked && !issue && !busy && connection) void diagnostics.verify(id, sql, connection.id) }} />

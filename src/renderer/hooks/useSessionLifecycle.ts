@@ -43,11 +43,11 @@ export function useSessionLifecycle({ backendUrl, tabsApi, activeSessionLoading,
   }, [])
   useEffect(() => {
     if (tabsApi.tabs.length > 0) attemptedEmptyCreation.current = false
-    if (tabsApi.protectionReady !== false && backendUrl && tabsApi.tabs.length === 0 && tabsApi.activeSessionId === null && !activeSessionLoading && !tabsApi.bootError && !attemptedEmptyCreation.current) {
+    if (tabsApi.protectionReady !== false && backendUrl && !tabsApi.hydratingTabs && tabsApi.tabs.length === 0 && tabsApi.activeSessionId === null && !activeSessionLoading && !tabsApi.bootError && !attemptedEmptyCreation.current) {
       attemptedEmptyCreation.current = true
       void tabsApi.createTab()
     }
-  }, [backendUrl, tabsApi.protectionReady, tabsApi.tabs.length, tabsApi.activeSessionId, activeSessionLoading, tabsApi.bootError])
+  }, [backendUrl, tabsApi.protectionReady, tabsApi.hydratingTabs, tabsApi.tabs.length, tabsApi.activeSessionId, activeSessionLoading, tabsApi.bootError])
 
   useEffect(() => {
     if (ws?.sql.trim() && !ws.fragmentTreeJson && !ws.workspaceSnapshotJson && !result?.tree

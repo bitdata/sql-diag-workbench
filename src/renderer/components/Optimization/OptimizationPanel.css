@@ -1,0 +1,22 @@
+.optimization-overlay { position: fixed; inset: 0; background: var(--overlay-bg, rgba(0,0,0,.6)); z-index: 1200; }
+.optimization-dialog { position: fixed; inset: 5vh 5vw; z-index: 1201; background: var(--bg-elevated); color: var(--text-primary); border: 1px solid var(--border); border-radius: 6px; padding: 16px; overflow: auto; font: 13px var(--font-ui); }
+.optimization-dialog header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.optimization-dialog h2 { font-size: 14px; margin: 0; }
+.optimization-dialog p { margin: 8px 0; }
+.optimization-dialog button, .optimization-dialog select { font: inherit; color: var(--text-primary); background: var(--bg-surface); border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; cursor: pointer; }
+.optimization-dialog button:disabled { opacity: .5; cursor: default; }
+.optimization-dialog :focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
+.optimization-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.optimization-sql { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+.optimization-sql label { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.optimization-sql textarea { min-height: 180px; resize: vertical; background: var(--bg-app); border: 1px solid var(--border); color: var(--text-primary); padding: 8px; font: 13px var(--font-mono); }
+.optimization-dialog pre { font: 12px var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow: auto; background: var(--bg-app); padding: 8px; }
+.optimization-evidence { border: 1px solid var(--border); padding: 12px; margin-top: 12px; }
+.optimization-experiment-settings { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; border: 1px solid var(--border); padding: 8px; margin-top: 12px; }
+.optimization-experiment-settings input { width: 88px; margin-left: 4px; color: var(--text-primary); background: var(--bg-app); border: 1px solid var(--border); border-radius: 4px; padding: 4px; font: inherit; }
+.optimization-experiment-settings span { color: var(--text-secondary); flex: 1 1 320px; }
+.optimization-evidence table { width: 100%; border-collapse: collapse; font: 12px var(--font-mono); margin-top: 8px; }
+.optimization-evidence th, .optimization-evidence td { border-bottom: 1px solid var(--border); padding: 4px 6px; text-align: left; }
+.optimization-confirm-layer { z-index: 1210; }
+.optimization-confirm { inset: auto; top: 50%; left: 50%; transform: translate(-50%,-50%); width: min(460px,90vw); z-index: 1211; }
+@media (max-width: 800px) { .optimization-sql { grid-template-columns: 1fr; } .optimization-dialog { inset: 2vh 2vw; } .optimization-confirm { inset: auto; top: 50%; left: 50%; } }

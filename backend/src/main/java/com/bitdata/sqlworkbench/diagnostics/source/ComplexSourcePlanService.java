@@ -39,7 +39,7 @@ public class ComplexSourcePlanService {
             guard.requireSingleSelect(request.sql(),dialect);
             var parser=resolver.parserConfig(dialect).withUnquotedCasing(dialect.equals("postgresql")?Casing.TO_LOWER:Casing.UNCHANGED);
             SqlNode root=SqlParser.create(request.sql(),parser).parseQuery();
-            metadata=zero(root).toSqlString(resolver.getDialect(dialect)).getSql();
+            metadata=NodeToSql.toQuotedSql(zero(root),resolver.getProfile(dialect));
             var strategy=strategies.get(dialect);
             try(Connection c=connections.openJdbcConnection(request.connectionId())) {
                 Deadline deadline=new Deadline(c);
@@ -72,7 +72,7 @@ public class ComplexSourcePlanService {
                     var column=matches.get(0);
                     if(column.errorReason()!=null) {issues.add(new Issue(null,k,column.errorReason()));continue;}
                     for(var binding:column.bindings()) {
-                        String id=binding.leaf().occurrence(),expression=binding.expression().toSqlString(resolver.getDialect(dialect)).getSql();
+                        String id=binding.leaf().occurrence(),expression=NodeToSql.toQuotedSql(binding.expression(),resolver.getProfile(dialect));
                         mappings.computeIfAbsent(id,ignored->new ArrayList<>()).add(new Mapping(k,label,expression));
                         var key=request.keys().get(k);
                         bound.computeIfAbsent(id,ignored->new ArrayList<>()).add(new PhysicalSourcePlanService.BoundKey("source_key_"+k,key.value(),key.type()));
@@ -94,8 +94,10 @@ public class ComplexSourcePlanService {
             }
         } catch(PhysicalSourcePlanService.Unverified e) {return unknown(request,metadata,e.code);}
         catch(CredentialFailure e) {return unknown(request,metadata,e.code);}
+        catch(com.bitdata.sqlworkbench.connection.WorkloadBusyException e) {return unknown(request,metadata,e.errorReason());}
         catch(SQLTimeoutException e) {return unknown(request,metadata,"SOURCE_METADATA_TIMEOUT");}
         catch(SQLException e) {return unknown(request,metadata,"SOURCE_METADATA_FAILED");}
+        catch(SqlSerializationException e) {return unknown(request,metadata,e.reason());}
         catch(SqlParseException|IllegalArgumentException e) {return unknown(request,metadata,"SOURCE_SQL_UNSUPPORTED");}
         catch(RuntimeException e) {return unknown(request,metadata,"SOURCE_PREPARATION_FAILED");}
     }

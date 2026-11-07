@@ -36,6 +36,7 @@ public final class CardinalityStructureInspector {
         }
         for(FragmentNode parent:scope.nodes().values()) {
             if(!observed.containsKey(parent.id())) continue;
+            try {
             SqlNode ast=parsed.get(parent.id());
             var children=scope.children().get(parent.id()).stream().map(scope.nodes()::get).toList();
             if(isUnionAll(ast)) {
@@ -72,6 +73,9 @@ public final class CardinalityStructureInspector {
                                 limit("MULTI_STATEMENT_SNAPSHOT_UNVERIFIED",parent.id(),"Counts were observed in separate statements."))));
                 }
             } else if(ast!=null) limits.add(limit("STRUCTURE_UNVERIFIED",parent.id(),"This SQL structure has count facts only; automatic comparisons are limited."));
+            } catch(SqlSerializationException unsupported) {
+                limits.add(limit(unsupported.reason(),parent.id(),"Target SQL serialization is unsupported; count facts remain available."));
+            }
         }
         return new Analysis(List.copyOf(comparisons),List.copyOf(limits));
     }

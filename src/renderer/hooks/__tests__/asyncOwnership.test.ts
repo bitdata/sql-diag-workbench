@@ -32,7 +32,7 @@ describe('async request ownership', () => {
     const pending = deferred<Response>()
     vi.mocked(apiFetch).mockReturnValue(pending.promise)
     const { result } = renderHook(() => useDiagnostics('http://backend'))
-    let done!: Promise<void>
+    let done!: Promise<unknown>
     act(() => { done = result.current.analyze({ id: 'A' }, {}, {}, 'session') })
     act(() => result.current.clear())
     await act(async () => { pending.resolve(response({ findings: [{ id: 'old' }] })); await done })
@@ -63,7 +63,7 @@ describe('async request ownership', () => {
     const old = deferred<Response>()
     vi.mocked(apiFetch).mockReturnValue(old.promise)
     const { result } = renderHook(() => useDiagnostics('http://backend'))
-    let done!: Promise<void>
+    let done!: Promise<unknown>
     act(() => { done = result.current.verify('finding', 'SELECT 11', 'conn'); void result.current.verify('finding', 'SELECT 11', 'conn') })
     expect(apiFetch).toHaveBeenCalledTimes(1)
     act(() => result.current.clear())

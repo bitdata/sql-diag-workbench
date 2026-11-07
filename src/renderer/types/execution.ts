@@ -82,6 +82,7 @@ export interface ResultCompleteness {
 }
 
 export interface ExecutionResult {
+  observationReceipt?: { status: 'SAVED' | 'FAILED' | 'NOT_APPLICABLE'; receiptId: string | null; errorReason: string | null } | null
   planCapture?: PlanCapture | null
   resultCompleteness?: ResultCompleteness | null
   completedAt?: string | null
@@ -122,11 +123,24 @@ export interface PlanCapabilities {
 }
 export interface CaptureIssue { code: string; nodePath: string | null; message: string }
 export interface PlanCapture {
+  details?: PlanDetails | null
   version: 1; requestedMode: Mode; attemptedMode: Mode | null
   submittedSql: string; explainSql: string | null; connectionId: string; sessionId: string | null; dialect: string
   serverProduct: string | null; serverVersion: string | null; capturedAt: string | null
   capabilities: PlanCapabilities | null; parseStatus: 'NOT_STARTED' | 'COMPLETE' | 'PARTIAL' | 'FAILED'
   issues: CaptureIssue[]
+}
+export interface PlanDetails {
+  version: 1
+  channel: 'POSTGRESQL_JSON' | 'MYSQL_JSON' | 'MYSQL_TREE'
+  rawPlan: string | null
+  database: string | null
+  databaseUser: string | null
+  settings: Record<string, string>
+  planningTimeMs: Metric
+  executionTimeMs: Metric
+  nodes: { sourcePath: string; raw: string | null; firstRowMs: Metric }[]
+  errorReason: string | null
 }
 export interface NodeMetrics {
   version: 1; origin: 'DATABASE_NODE' | 'APPLICATION_SYNTHETIC' | 'LEGACY_UNKNOWN'; sourcePath: string | null
@@ -139,4 +153,25 @@ export interface Evaluation {
   version: 1; executionId: string | null
   sourceState: 'VERIFIED' | 'UNVERIFIED' | 'EXPIRED' | 'MISMATCH' | 'UNAVAILABLE'
   rules: RuleEvaluation[]; degraded: boolean; errorReason: string | null
+}
+
+export interface PlanSqlMapping {
+  version: 1
+  executionId: string
+  captureKey: string
+  dialect: string
+  submittedSqlSha256: string
+  edges: PlanMappingEdge[]
+  degraded: boolean
+  errorReason: string | null
+  issues: { code: string; planNodePath: string | null; message: string }[]
+}
+export interface PlanMappingEdge {
+  planNodePath: string | null
+  targetKind: 'SQL_SPAN' | 'FRAGMENT' | 'DIAGNOSTIC_EVIDENCE'
+  targetId: string | null
+  span: { nodeId: string; type: string; label: string; startOffset: number; endOffset: number } | null
+  confidence: 'EXACT' | 'INFERRED' | 'UNKNOWN'
+  relation: 'PLAN_TO_SQL' | 'PLAN_TO_FRAGMENT' | 'PLAN_TO_EVIDENCE'
+  reason: string
 }

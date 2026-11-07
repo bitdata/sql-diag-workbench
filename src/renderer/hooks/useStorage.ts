@@ -4,8 +4,8 @@ import { apiFetch } from '../utils/api'
 export interface StoragePolicy { enabled: boolean; retentionDays: number; maxStorageMiB: number; revision: number }
 export interface StorageSize { mainBytes: number; walBytes: number; shmBytes: number; totalBytes: number; reusableBytes: number; degraded: boolean; errorReason?: string | null }
 export interface StorageJob { id: string; status: string; phase: string; deleted: Record<string, number>; before: StorageSize; after?: StorageSize; targetMet: boolean; errorReason?: string; skippedReasons: string[] }
-export interface StorageStatus { policy: StoragePolicy; size: StorageSize; protectionReady: boolean; job?: StorageJob | null; degraded: boolean; errorReason?: string }
-export interface StoragePreview { revision: number; protectedSessions: number; unknownSessions: number; expiredCounts: Record<string, number>; unknown: { id: string; name: string; updatedAt: string; estimatedBytes: number }[]; degraded: boolean; errorReason?: string }
+export interface StorageStatus { policy: StoragePolicy; size: StorageSize; protectionReady: boolean; job?: StorageJob | null; degraded: boolean; errorReason?: string; expiredReceiptsDeleted?: number; expiredReceiptsPending?: number; receiptCleanupError?: string | null }
+export interface StoragePreview { revision: number; protectedSessions: number; unknownSessions: number; protectedSnapshots?: number; expiredCounts: Record<string, number>; unknown: { id: string; name: string; updatedAt: string; estimatedBytes: number }[]; degraded: boolean; errorReason?: string }
 export function useStorage(backendUrl: string | null) {
   const [status, setStatus] = useState<StorageStatus | null>(null)
   const [preview, setPreview] = useState<StoragePreview | null>(null)

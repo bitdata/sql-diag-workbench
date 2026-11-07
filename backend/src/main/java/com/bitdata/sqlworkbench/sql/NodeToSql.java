@@ -1,6 +1,10 @@
 package com.bitdata.sqlworkbench.sql;
 
 import org.apache.calcite.sql.SqlNode;
+import org.apache.calcite.sql.SqlCall;
+import org.apache.calcite.sql.SqlWriter;
+import org.apache.calcite.sql.dialect.MysqlSqlDialect;
+import org.apache.calcite.sql.fun.SqlBetweenOperator;
 
 import java.util.Set;
 
@@ -20,9 +24,39 @@ import java.util.Set;
 public class NodeToSql {
 
     public static String toSql(SqlNode node, DialectProfile profile) {
-        String sql = node.toSqlString(profile.calciteDialect()).getSql();
+        String sql = toQuotedSql(node, profile);
         return unquoteIfSafe(sql, profile.quoteChar(), profile.reservedKeywords());
     }
+
+    /** Same executable writer, retaining identifier quotes for metadata/candidate callers. */
+    public static String toQuotedSql(SqlNode node, DialectProfile profile) {
+        return node.toSqlString("mysql".equalsIgnoreCase(profile.name())
+            ? MYSQL_EXECUTABLE : profile.calciteDialect()).getSql();
+    }
+
+    // Local to execution serialization: canonical/diff writers and global operators stay untouched.
+    private static final MysqlSqlDialect MYSQL_EXECUTABLE = new MysqlSqlDialect(MysqlSqlDialect.DEFAULT_CONTEXT) {
+        @Override public void unparseCall(SqlWriter writer, SqlCall call, int leftPrec, int rightPrec) {
+            if (!(call.getOperator() instanceof SqlBetweenOperator between)) {
+                super.unparseCall(writer, call, leftPrec, rightPrec);
+                return;
+            }
+            if (between.flag == SqlBetweenOperator.Flag.SYMMETRIC)
+                throw new SqlSerializationException("MYSQL_BETWEEN_SYMMETRIC_UNSUPPORTED");
+            var frame = writer.startList(SqlWriter.FrameTypeEnum.SIMPLE, "", "");
+            call.operand(0).unparse(writer, between.getLeftPrec(), 0);
+            writer.sep(between.isNegated() ? "NOT BETWEEN" : "BETWEEN");
+            // Explicit bound parentheses protect internal AND/OR without duplicating operands.
+            var lower = writer.startList("(", ")");
+            call.operand(1).unparse(writer, 0, 0);
+            writer.endList(lower);
+            writer.sep("AND");
+            var upper = writer.startList("(", ")");
+            call.operand(2).unparse(writer, 0, 0);
+            writer.endList(upper);
+            writer.endList(frame);
+        }
+    };
 
     private static String unquoteIfSafe(String sql, char quoteChar, Set<String> reserved) {
         StringBuilder result = new StringBuilder();

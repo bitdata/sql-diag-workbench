@@ -25,6 +25,64 @@ class StorageServiceTest {
         sessions=new SessionStore(jdbc);
     }
     @AfterEach void close() { service.close(); }
+    void planReceipt(String id,boolean finalized,String expiry) {
+        jdbc.update("INSERT INTO plan_observation_receipts(id,execution_id,connection_id,dialect,sql_sha256,observation_sha256,payload_json,payload_sha256,byte_size,created_at,expires_at,finalized_snapshot_id) VALUES(?,?,'c','postgresql','hash','hash','{}','hash',2,'2026-10-12T23:00:00Z',?,?)",id,id,expiry,finalized?"saved":null);
+    }
+    @Test void receiptExpiryIsBatchedObservableAndIndependentOfGeneralPolicy() {
+        assertFalse(service.policy().enabled());
+        for(int i=0;i<201;i++) planReceipt("expired-"+i,i%2==0,"2026-10-12T23:59:59Z");
+        planReceipt("live",false,"2026-10-13T23:00:00Z");
+        assertEquals(201L,service.status().get("expiredReceiptsPending"));
+        service.expireReceipts(); assertEquals(200L,service.status().get("expiredReceiptsDeleted"));
+        assertEquals(1L,service.status().get("expiredReceiptsPending"));
+        service.expireReceipts(); assertEquals(201L,service.status().get("expiredReceiptsDeleted"));
+        assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM plan_observation_receipts",Integer.class));
+    }
+    @Test void receiptCleanupFailureCannotHideBehindHealthyStorageStatus() {
+        service.protect(PROFILE,List.of()); planReceipt("expired",false,"2026-10-12T23:59:59Z");
+        jdbc.execute("CREATE TRIGGER fail_receipt_cleanup BEFORE DELETE ON plan_observation_receipts BEGIN SELECT RAISE(ABORT,'injected cleanup failure'); END");
+        service.expireReceipts();
+        assertEquals(true,service.status().get("degraded"));
+        assertEquals("SNAPSHOT_RECEIPT_EXPIRY_FAILED",service.status().get("errorReason"));
+        assertEquals(1L,service.status().get("expiredReceiptsPending"));
+        jdbc.execute("DROP TRIGGER fail_receipt_cleanup"); service.expireReceipts();
+        assertNull(service.status().get("receiptCleanupError")); assertEquals(false,service.status().get("degraded"));
+    }
+    @Test void capacityCandidatesExcludeFinalizedReceiptsAndPinnedSnapshots() {
+        service.protect(PROFILE,List.of());
+        planReceipt("unsealed",false,"2026-10-13T23:00:00Z"); planReceipt("sealed",true,"2026-10-13T23:00:00Z");
+        for(String id:List.of("pinned","free")) jdbc.update("INSERT INTO investigation_snapshots(id,version,source_observation_id,created_at,snapshot_json,payload_sha256,byte_size) VALUES(?,1,?,'2026-10-12T23:00:00Z','{}','hash',2)",id,id);
+        jdbc.update("INSERT INTO investigation_snapshot_protection VALUES('pinned','2026-10-13T00:00:00Z')");
+        var p=service.policy(); var size=service.measure();
+        ReflectionTestUtils.setField(service,"job",new StorageService.Job("test","manual","running","capacity",p.revision(),Map.of(),size,null,false,false,null,List.of()));
+        ReflectionTestUtils.invokeMethod(service,"deleteBatch","plan_observation_receipts",p,false);
+        ReflectionTestUtils.invokeMethod(service,"deleteBatch","investigation_snapshots",p,false);
+        assertEquals(List.of("sealed"),jdbc.queryForList("SELECT id FROM plan_observation_receipts",String.class));
+        assertEquals(List.of("pinned"),jdbc.queryForList("SELECT id FROM investigation_snapshots",String.class));
+        assertFalse(service.measure().degraded());
+    }
+    @Test void snapshotPinAndCapacityDeletionHaveASerialOutcome() throws Exception {
+        service.protect(PROFILE,List.of());
+        var mapper=new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules();
+        var snapshots=new com.bitdata.sqlworkbench.execution.InvestigationSnapshotStore(jdbc,mapper,
+                new com.bitdata.sqlworkbench.execution.PlanObservationReceiptStore(jdbc,mapper),null);
+        var p=service.policy(); var size=service.measure();
+        ReflectionTestUtils.setField(service,"job",new StorageService.Job("race","manual","running","capacity",p.revision(),Map.of(),size,null,false,false,null,List.of()));
+        var executor=java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            for(int i=0;i<10;i++) {
+                String id="snapshot-race-"+i;
+                jdbc.update("INSERT INTO investigation_snapshots(id,version,source_observation_id,created_at,snapshot_json,payload_sha256,byte_size) VALUES(?,1,?,'2026-10-12T23:00:00Z','{}','hash',2)",id,id);
+                var start=new java.util.concurrent.CountDownLatch(1);
+                var pin=executor.submit(()->{ start.await(); try { snapshots.protect(id,true); return true; }
+                    catch(com.bitdata.sqlworkbench.execution.InvestigationSnapshotStore.Failure gone) { assertEquals("SNAPSHOT_UNAVAILABLE",gone.code); return false; } });
+                var delete=executor.submit(()->{ start.await(); ReflectionTestUtils.invokeMethod(service,"deleteBatch","investigation_snapshots",p,false); return true; });
+                start.countDown(); boolean pinned=pin.get(); delete.get();
+                assertEquals(pinned?1:0,jdbc.queryForObject("SELECT count(*) FROM investigation_snapshots WHERE id=?",Integer.class,id));
+                assertEquals(pinned?1:0,jdbc.queryForObject("SELECT count(*) FROM investigation_snapshot_protection WHERE snapshot_id=?",Integer.class,id));
+            }
+        } finally { executor.shutdownNow(); }
+    }
     Session session(String id) { return Session.builder().id(id).name(id).sqlText("SELECT 1").dialect("postgresql").build(); }
     void old(String id) { jdbc.update("UPDATE sessions SET updated_at='2000-01-01T00:00:00Z' WHERE id=?",id); }
     StorageService.Job finish(StorageService.Job initial) throws Exception {
@@ -108,10 +166,11 @@ class StorageServiceTest {
         service.protect(PROFILE,List.of()); service.apply(false,30,16,1);
         String payload="x".repeat(128*1024);
         for(int i=0;i<180;i++) jdbc.update("INSERT INTO history (id,session_id,sql_text,executed_at,duration_ms,row_count) VALUES(?, 's',?,'2000-01-01T00:00:00Z',0,0)","h"+i,payload);
-        long before=service.measure().totalBytes(); assertTrue(before>16*1024*1024);
+        var measuredBefore=service.measure(); long before=measuredBefore.totalBytes(); assertTrue(before>16*1024*1024);
         var job=finish(service.start(2,"manual"));
         assertEquals("completed",job.status()); assertEquals(180,job.deleted().get("history"));
         assertTrue(job.targetMet()); assertTrue(job.after().totalBytes()<before/2);
+        System.out.println("M2_REAL_FILE_RECLAIM before="+measuredBefore+" after="+job.after()+" deleted="+job.deleted());
     }
     @Test void protectedBytesReportUnmetTarget() throws Exception {
         sessions.save(session("large")); jdbc.update("UPDATE sessions SET sql_text=? WHERE id='large'","x".repeat(18*1024*1024));

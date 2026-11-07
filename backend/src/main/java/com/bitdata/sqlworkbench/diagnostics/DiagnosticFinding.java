@@ -17,6 +17,7 @@ import java.util.List;
  * @param status             lifecycle status (defaults to {@link FindingStatus#SUSPECTED})
  * @param verificationResult result message from verification SQL execution (may be null)
  */
+@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.ALWAYS)
 public record DiagnosticFinding(
     String id,
     String ruleId,
@@ -30,8 +31,14 @@ public record DiagnosticFinding(
     FindingStatus status,
     String verificationResult,
     boolean degraded,
-    String errorReason
+    String errorReason,
+    String planNodePath
 ) {
+    public DiagnosticFinding(String id,String ruleId,DiagnosticRule.Severity severity,String title,String message,List<String> evidence,double confidence,
+            String verificationSql,String affectedNodeId,FindingStatus status,String verificationResult,boolean degraded,String errorReason) {
+        this(id,ruleId,severity,title,message,evidence,confidence,verificationSql,affectedNodeId,status,verificationResult,degraded,errorReason,null);
+    }
+    public DiagnosticFinding withoutFragment() {return new DiagnosticFinding(id,ruleId,severity,title,message,evidence,confidence,verificationSql,null,status,verificationResult,degraded,errorReason,planNodePath);}
     public DiagnosticFinding(String id, String ruleId, DiagnosticRule.Severity severity, String title, String message,
                              List<String> evidence, double confidence, String verificationSql, String affectedNodeId,
                              FindingStatus status, String verificationResult) {
@@ -56,6 +63,7 @@ public record DiagnosticFinding(
         private String verificationResult;
         private boolean degraded;
         private String errorReason;
+        private String planNodePath;
 
         public Builder id(String id) { this.id = id; return this; }
         public Builder ruleId(String ruleId) { this.ruleId = ruleId; return this; }
@@ -70,9 +78,10 @@ public record DiagnosticFinding(
         public Builder verificationResult(String verificationResult) { this.verificationResult = verificationResult; return this; }
         public Builder degraded(boolean value) { degraded = value; return this; }
         public Builder errorReason(String value) { errorReason = value; return this; }
+        public Builder planNodePath(String value) {planNodePath=value;return this;}
 
         public DiagnosticFinding build() {
-            return new DiagnosticFinding(id, ruleId, severity, title, message, evidence, confidence, verificationSql, affectedNodeId, status, verificationResult, degraded, errorReason);
+            return new DiagnosticFinding(id, ruleId, severity, title, message, evidence, confidence, verificationSql, affectedNodeId, status, verificationResult, degraded, errorReason, planNodePath);
         }
     }
 }

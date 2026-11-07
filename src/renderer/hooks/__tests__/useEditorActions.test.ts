@@ -50,6 +50,7 @@ function makeTabsApi(sql = 'SELECT 1', onChange?: () => void): UseTabsApi {
   return {
     tabs: [],
     activeSessionId: 'tab-1',
+    hydratingTabs: false,
     createTab: vi.fn(),
     closeTab: vi.fn(),
     renameTab: vi.fn(),
@@ -78,6 +79,7 @@ function makeExecution() {
     loading: false,
     execute: vi.fn(),
     analyze: vi.fn(),
+    analyzePlan: vi.fn(),
     clearResult: vi.fn(),
     reset: vi.fn(),
   }
@@ -85,12 +87,14 @@ function makeExecution() {
 
 function makeDiagnostics(): DiagnosticsHook {
   return {
+    lifecycle: { status: 'idle', ownerKey: 'test', generation: 1, errorReason: null },
     findings: [],
     loading: false,
     error: null,
     verifyingIds: new Set(),
     verifyErrors: {},
     analyze: vi.fn(),
+    analyzePlan: vi.fn(),
     clear: vi.fn(),
     verify: vi.fn(),
     clearVerifyError: vi.fn(),
@@ -243,6 +247,16 @@ describe('useEditorActions', () => {
     act(() => result.current.handleNewSession())
     expect(tabsApi.createTab).toHaveBeenCalledOnce()
     expect(result.current.currentSql).toBe('SELECT 42')
+  })
+
+  it('does not create a tab from the keyboard shortcut while sessions are restoring', () => {
+    const tabsApi = makeTabsApi()
+    tabsApi.booting = true
+    const { result } = setup({ tabsApi })
+
+    act(() => result.current.handleNewSession())
+
+    expect(tabsApi.createTab).not.toHaveBeenCalled()
   })
 
   it('handleVerifyFinding forwards to diagnostics.verify', () => {

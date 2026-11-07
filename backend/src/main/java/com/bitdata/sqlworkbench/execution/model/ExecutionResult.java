@@ -17,15 +17,24 @@ public record ExecutionResult(
     boolean degraded,
     ResultCompleteness resultCompleteness,
     java.time.Instant completedAt,
-    PlanCapture planCapture
+    PlanCapture planCapture,
+    ObservationReceipt observationReceipt
 ) {
+    public ExecutionResult(String executionId,ExecutionStatus status,List<ColumnInfo> columns,List<List<Object>> rows,
+            int rowCount,Timing timing,PlanNode plan,String planError,String error,Persistence persistence,String errorReason,
+            boolean degraded,ResultCompleteness completeness,java.time.Instant completedAt,PlanCapture planCapture) {
+        this(executionId,status,columns,rows,rowCount,timing,plan,planError,error,persistence,errorReason,degraded,completeness,completedAt,planCapture,null);
+    }
     public ExecutionResult(String executionId,ExecutionStatus status,List<ColumnInfo> columns,List<List<Object>> rows,
             int rowCount,Timing timing,PlanNode plan,String planError,String error,Persistence persistence,String errorReason,
             boolean degraded,ResultCompleteness completeness,java.time.Instant completedAt) {
         this(executionId,status,columns,rows,rowCount,timing,plan,planError,error,persistence,errorReason,degraded,completeness,completedAt,null);
     }
     public ExecutionResult withCapture(PlanCapture capture) {
-        return new ExecutionResult(executionId,status,columns,rows,rowCount,timing,plan,planError,error,historyPersistence,errorReason,degraded,resultCompleteness,completedAt,capture);
+        return new ExecutionResult(executionId,status,columns,rows,rowCount,timing,plan,planError,error,historyPersistence,errorReason,degraded,resultCompleteness,completedAt,capture,observationReceipt);
+    }
+    public ExecutionResult withObservationReceipt(ObservationReceipt receipt) {
+        return new ExecutionResult(executionId,status,columns,rows,rowCount,timing,plan,planError,error,historyPersistence,errorReason,degraded,resultCompleteness,completedAt,planCapture,receipt);
     }
     public ExecutionResult {
         resultCompleteness = ResultCompleteness.normalize(resultCompleteness);
@@ -35,6 +44,7 @@ public record ExecutionResult(
         this(executionId,status,columns,rows,rowCount,timing,plan,planError,error,persistence,errorReason,degraded,null,null);
     }
     public record Persistence(String status,String errorReason) {}
+    public record ObservationReceipt(String status,String receiptId,String errorReason) {}
     public ExecutionResult(String executionId,ExecutionStatus status,List<ColumnInfo> columns,List<List<Object>> rows,
             int rowCount,Timing timing,PlanNode plan,String planError,String error) {
         this(executionId,status,columns,rows,rowCount,timing,plan,planError,error,null,null,false);
@@ -44,10 +54,13 @@ public record ExecutionResult(
         this(executionId,status,columns,rows,rowCount,timing,plan,planError,error,persistence,null,false);
     }
     public ExecutionResult withCredentialFailure(String reason) {
-        return new ExecutionResult(executionId,status,columns,rows,rowCount,timing,plan,planError,error,historyPersistence,reason,true,resultCompleteness,completedAt,planCapture);
+        return new ExecutionResult(executionId,status,columns,rows,rowCount,timing,plan,planError,error,historyPersistence,reason,true,resultCompleteness,completedAt,planCapture,observationReceipt);
+    }
+    public ExecutionResult withFailureReason(String reason) {
+        return new ExecutionResult(executionId,status,columns,rows,rowCount,timing,plan,planError,error,historyPersistence,reason,true,resultCompleteness,completedAt,planCapture,observationReceipt);
     }
     public ExecutionResult withHistory(Persistence persistence) {
-        return new ExecutionResult(executionId,status,columns,rows,rowCount,timing,plan,planError,error,persistence,errorReason,degraded,resultCompleteness,completedAt,planCapture);
+        return new ExecutionResult(executionId,status,columns,rows,rowCount,timing,plan,planError,error,persistence,errorReason,degraded,resultCompleteness,completedAt,planCapture,observationReceipt);
     }
     public record ColumnInfo(String name, String type) {}
     public record Timing(long durationMs) {}

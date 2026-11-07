@@ -220,9 +220,11 @@ public class RowTraceEngine {
             traceStore.fail(traceId,invalid.getMessage(),invalid.code);
         } catch (com.bitdata.sqlworkbench.connection.CredentialFailure e) {
             traceStore.fail(traceId,e.getMessage(),e.code);
+        } catch (com.bitdata.sqlworkbench.connection.WorkloadBusyException e) {
+            traceStore.fail(traceId,e.getMessage(),e.errorReason());
         } catch (Exception e) {
             log.error("Trace {} failed: {}", traceId, e.getMessage(), e);
-            traceStore.fail(traceId, e.getMessage());
+            traceStore.fail(traceId, e.getMessage()!=null?e.getMessage():"Trace failed","TRACE_FAILED");
         }
     }
 
@@ -277,6 +279,8 @@ public class RowTraceEngine {
             traceStore.fail(traceId,invalid.getMessage(),invalid.code);
         } catch(com.bitdata.sqlworkbench.connection.CredentialFailure failure) {
             traceStore.fail(traceId,failure.getMessage(),failure.code);
+        } catch(com.bitdata.sqlworkbench.connection.WorkloadBusyException failure) {
+            traceStore.fail(traceId,failure.getMessage(),failure.errorReason());
         } catch(Exception failure) {
             traceStore.fail(traceId,failure.getMessage()!=null?failure.getMessage():"Quantity observation failed","TRACE_FAILED");
         }

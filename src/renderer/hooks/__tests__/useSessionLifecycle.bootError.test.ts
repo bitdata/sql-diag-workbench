@@ -18,6 +18,7 @@ function makeTabsApi(overrides: Partial<UseTabsApi> = {}): UseTabsApi {
   return {
     tabs: [],
     activeSessionId: null,
+    hydratingTabs: false,
     booting: false,
     bootError: null,
     bootErrorLabel: 'Could not create the first tab',

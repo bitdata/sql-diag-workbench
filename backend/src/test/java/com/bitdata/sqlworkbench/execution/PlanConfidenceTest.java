@@ -97,6 +97,7 @@ class PlanConfidenceTest {
         when(connections.getById("c")).thenReturn(Optional.of(new ConnectionConfig("c","test","localhost",5432,"db","user","postgresql",null,false,"","","direct",false)));
         when(connections.openJdbcConnection("c")).thenReturn(conn);
         when(stmt.executeQuery(anyString())).thenReturn(rs); when(rs.next()).thenReturn(true,false);
+        var resultMetadata=mock(ResultSetMetaData.class);when(rs.getMetaData()).thenReturn(resultMetadata);when(resultMetadata.getColumnCount()).thenReturn(1);
         when(rs.getString(1)).thenReturn("[{\"Plan\":{\"Node Type\":\"Result\",\"Plan Rows\":1}}]");
         var ticker=new AtomicLong(1);
         var engine=new ExecutionEngine(connections,new ExplainServiceFactory(List.of(pg)),new DatabaseStrategyFactory(Map.of("pg",new PostgreSqlStrategy())),mock(SelectOnlyGuard.class),30,100,ticker::get);
@@ -123,7 +124,7 @@ class PlanConfidenceTest {
         } finally { engine.shutdown(); }
     }
 
-    @Test void invalidModesNeverEnterEngineAndMysqlActualNeverOpensJdbc() throws Exception {
+    @Test void invalidModesAndUnadaptedDialectsNeverOpenJdbc() throws Exception {
         var engine=mock(ExecutionEngine.class);
         var controller=new ExecutionController(engine);
         for(String mode:List.of("","Actual","ACTUAL","other")) {
@@ -132,7 +133,7 @@ class PlanConfidenceTest {
             assertEquals("INVALID_ANALYZE_MODE",((Map<?,?>)response.getBody()).get("errorReason"));
         }
         verifyNoInteractions(engine);
-        for(String dialect:List.of("mysql","oracle","sqlserver","unknown")) {
+        for(String dialect:List.of("oracle","sqlserver","unknown")) {
         var connections=mock(ConnectionService.class);
         when(connections.getById("c")).thenReturn(Optional.of(new ConnectionConfig("c","test","localhost",3306,"db","u",dialect,null,false,"","","direct",false)));
         var real=new ExecutionEngine(connections,new ExplainServiceFactory(List.of(new MySqlPlanAdapter())),mock(DatabaseStrategyFactory.class),mock(SelectOnlyGuard.class),30,100);

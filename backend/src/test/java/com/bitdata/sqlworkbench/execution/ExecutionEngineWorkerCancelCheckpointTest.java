@@ -92,7 +92,7 @@ class ExecutionEngineWorkerCancelCheckpointTest {
         var metadata=mock(java.sql.DatabaseMetaData.class);
         when(conn.getMetaData()).thenReturn(metadata);
         when(metadata.getDatabaseProductName()).thenReturn("PostgreSQL");
-        when(metadata.getDatabaseProductVersion()).thenReturn("16");
+        when(metadata.getDatabaseProductVersion()).thenReturn("16.14");
         when(conn.createStatement()).thenReturn(stmt);
 
         Object ctx = newContext("probe-before-exec", "EXECUTE", "SELECT 1");
@@ -122,7 +122,7 @@ class ExecutionEngineWorkerCancelCheckpointTest {
         var metadata=mock(java.sql.DatabaseMetaData.class);
         when(conn.getMetaData()).thenReturn(metadata);
         when(metadata.getDatabaseProductName()).thenReturn("PostgreSQL");
-        when(metadata.getDatabaseProductVersion()).thenReturn("16");
+        when(metadata.getDatabaseProductVersion()).thenReturn("16.14");
         when(conn.createStatement()).thenReturn(stmt);
 
         Object ctx = newContext("probe-before-explain", "ANALYZE", "SELECT 1");
@@ -152,7 +152,7 @@ class ExecutionEngineWorkerCancelCheckpointTest {
         var metadata=mock(java.sql.DatabaseMetaData.class);
         when(conn.getMetaData()).thenReturn(metadata);
         when(metadata.getDatabaseProductName()).thenReturn("PostgreSQL");
-        when(metadata.getDatabaseProductVersion()).thenReturn("16");
+        when(metadata.getDatabaseProductVersion()).thenReturn("16.14");
         when(conn.createStatement()).thenReturn(stmt);
         when(stmt.execute(anyString())).thenReturn(true);
         when(stmt.getResultSet()).thenReturn(rs);

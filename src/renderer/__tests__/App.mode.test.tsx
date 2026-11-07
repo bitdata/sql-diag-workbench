@@ -215,7 +215,7 @@ describe('App workspace mode wiring', () => {
           HttpResponse.json({ executionId: 'exec-1', status: 'QUEUED' }),
         ),
         http.get('*/api/execution/execute/:id', () => HttpResponse.json(COMPLETED_PLAN)),
-        http.post('*/api/diagnostics/analyze', () => {
+        http.post('*/api/diagnostics/plan', () => {
           diagnosticsPosts++
           return HttpResponse.json({ findings: [] })
         }),
@@ -245,7 +245,7 @@ describe('App workspace mode wiring', () => {
           HttpResponse.json({ executionId: 'exec-1', status: 'QUEUED' }),
         ),
         http.get('*/api/execution/execute/:id', () => HttpResponse.json(COMPLETED_PLAN)),
-        http.post('*/api/diagnostics/analyze', () => {
+        http.post('*/api/diagnostics/plan', () => {
           diagnosticsPosts++
           return HttpResponse.json({ findings: [] })
         }),
@@ -286,7 +286,7 @@ describe('App workspace mode wiring', () => {
           HttpResponse.json({ executionId: 'exec-1', status: 'QUEUED' }),
         ),
         http.get('*/api/execution/execute/:id', () => HttpResponse.json(COMPLETED_ROWS)),
-        http.post('*/api/diagnostics/analyze', () => {
+        http.post('*/api/diagnostics/plan', () => {
           diagnosticsPosts++
           return HttpResponse.json({ findings: [] })
         }),

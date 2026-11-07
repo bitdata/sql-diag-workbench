@@ -11,6 +11,7 @@ describe('TabBar', () => {
     onSwitch: vi.fn(),
     onClose: vi.fn(),
     onCreate: vi.fn(),
+    createDisabled: false,
     onContextMenu: vi.fn(),
   }
 
@@ -58,6 +59,17 @@ describe('TabBar', () => {
     )
     await user.click(getByLabelText('New tab'))
     expect(onCreate).toHaveBeenCalledOnce()
+  })
+
+  it('disables tab creation while workspace state is being restored', async () => {
+    const onCreate = vi.fn()
+    const { user, getByLabelText } = renderWithProviders(
+      <TabBar {...defaultProps} onCreate={onCreate} createDisabled />
+    )
+    const button = getByLabelText('New tab')
+    expect(button).toBeDisabled()
+    await user.click(button)
+    expect(onCreate).not.toHaveBeenCalled()
   })
 
   it('calls onClose with sessionId when close button clicked', async () => {

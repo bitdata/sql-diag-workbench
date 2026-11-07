@@ -26,6 +26,7 @@ class DiagnosticsControllerVerifyTest {
     @MockBean TraceStore traceStore;
     @MockBean DiagnosticReportStore reportStore;
     @MockBean FindingVerifier findingVerifier;
+    @MockBean com.bitdata.sqlworkbench.diagnostics.mapping.PlanSqlMappingService mappingService;
 
     @Test
     void verifyReturnsConfirmed() throws Exception {

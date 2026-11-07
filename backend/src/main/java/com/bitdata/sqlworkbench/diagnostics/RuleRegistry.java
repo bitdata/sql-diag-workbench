@@ -82,7 +82,7 @@ public class RuleRegistry {
                         boolean any=nodes.stream().anyMatch(n -> comparable(n));
                         boolean all=!nodes.isEmpty() && nodes.stream().allMatch(n -> comparable(n));
                         if(!all) { status="SKIPPED"; reason=any?"PARTIAL_EVALUATION":"ACTUAL_METRIC_UNAVAILABLE"; }
-                    } else if("sequential-scan".equals(rule.id()) && PlanNodeWalker.findAll(plan,n -> n.operation()!=null && n.operation().toLowerCase(java.util.Locale.ROOT).contains("seq scan")).isEmpty()) {
+                    } else if("sequential-scan".equals(rule.id()) && PlanNodeWalker.findAll(plan,n -> com.bitdata.sqlworkbench.diagnostics.rules.SequentialScanRule.isSeqScan(n.operation())).isEmpty()) {
                         status="NOT_APPLICABLE"; reason="NO_APPLICABLE_NODE";
                     }
                 }
@@ -95,9 +95,10 @@ public class RuleRegistry {
             } catch(Exception failure) { status="FAILED"; reason="RULE_FAILED"; findings.add(failedRule(rule,fragment.id())); }
             coverage.add(new Evaluation.RuleEvaluation(rule.id(),status,reason));
         }
-        boolean degraded=!"VERIFIED".equals(observation.sourceState()) || coverage.stream().anyMatch(r -> r.status().equals("SKIPPED") || r.status().equals("FAILED"));
+        boolean captureDegraded=observation.result()!=null&&observation.result().degraded();
+        boolean degraded=captureDegraded || !"VERIFIED".equals(observation.sourceState()) || coverage.stream().anyMatch(r -> r.status().equals("SKIPPED") || r.status().equals("FAILED"));
         return new Evaluated(List.copyOf(findings),new Evaluation(1,executionId,observation.sourceState(),coverage,degraded,
-            observation.errorReason()!=null?observation.errorReason():degraded?"PARTIAL_EVALUATION":null));
+            observation.errorReason()!=null?observation.errorReason():captureDegraded?observation.result().errorReason():degraded?"PARTIAL_EVALUATION":null));
     }
     private static boolean comparable(com.bitdata.sqlworkbench.execution.model.ExecutionResult.PlanNode n) {
         var m=n.metrics();

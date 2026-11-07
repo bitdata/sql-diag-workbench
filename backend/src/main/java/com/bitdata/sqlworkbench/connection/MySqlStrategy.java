@@ -26,7 +26,7 @@ public class MySqlStrategy implements DatabaseStrategy {
 
     @Override
     public String getAnalyzeSql(String sql) {
-        return "EXPLAIN ANALYZE FORMAT=JSON " + sql;
+        return "EXPLAIN ANALYZE FORMAT=TREE " + sql;
     }
 
     @Override

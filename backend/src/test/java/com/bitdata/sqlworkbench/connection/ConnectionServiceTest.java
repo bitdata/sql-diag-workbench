@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -32,6 +33,20 @@ import static org.mockito.Mockito.when;
  * {@link ConnectionService#TEST_CONNECT_TIMEOUT_MS} / {@link ConnectionService#WORKLOAD_CONNECT_TIMEOUT_MS}.
  */
 class ConnectionServiceTest {
+
+    @Test void pinnedConfigurationChecksBeforeCredentialsAndDoesNotRereadAfterCredentialLookup() throws Exception {
+        var store=mock(ConnectionStore.class);var keychain=mock(KeychainStore.class);var captured=config();
+        var connection=mock(Connection.class);var calls=new ArrayList<String>();
+        var service=new ConnectionService(store,keychain,DatabaseStrategyFactory.withBuiltinStrategies(),(url,user,password)->{calls.add(url+"|"+user);return connection;},300,300);
+        when(store.findById("conn-1")).thenReturn(Optional.of(captured));
+        assertEquals("CONNECTION_CHANGED",assertThrows(SQLException.class,()->service.openJdbcConnection("conn-1","old")).getMessage());
+        org.mockito.Mockito.verifyNoInteractions(keychain);
+        when(keychain.retrieve("conn-1")).thenAnswer(i->{when(store.findById("conn-1")).thenReturn(Optional.empty());return "secret";});
+        Connection leased=service.openJdbcConnection("conn-1",ConnectionIdentity.revision(captured));
+        assertTrue(leased.isWrapperFor(Connection.class));
+        leased.close();
+        assertEquals(1,calls.size());assertTrue(calls.get(0).contains(captured.host()));
+    }
 
     private static final long DEADLINE_MS = 300L;
 
@@ -188,7 +203,65 @@ class ConnectionServiceTest {
                 return connection;
             }, DEADLINE_MS, DEADLINE_MS);
 
-        assertSame(connection, service.openJdbcConnection("conn-1"));
+        Connection leased=service.openJdbcConnection("conn-1");
+        assertTrue(leased.isWrapperFor(Connection.class));
+        leased.close();
         assertEquals(List.of("jdbc:postgresql://" + URL_HOST + ":5432/testdb"), seenUrls);
+    }
+
+    @Test
+    void lateConnectionAfterDeadlineRemainsLeasedUntilClosed() throws Exception {
+        ConnectionStore store=mock(ConnectionStore.class);KeychainStore keychain=mock(KeychainStore.class);
+        when(store.findById("conn-1")).thenReturn(Optional.of(config()));when(keychain.retrieve("conn-1")).thenReturn("pw");
+        WorkloadLeaseManager leases=new WorkloadLeaseManager();CountDownLatch releaseHandshake=new CountDownLatch(1);
+        Connection late=mock(Connection.class);CountDownLatch handshakeStarted=new CountDownLatch(1),interruptionObserved=new CountDownLatch(1);
+        ConnectionService service=new ConnectionService(store,keychain,DatabaseStrategyFactory.withBuiltinStrategies(),(url,user,password)->{
+            handshakeStarted.countDown();
+            while(releaseHandshake.getCount()!=0) try { releaseHandshake.await(); }
+            catch(InterruptedException ignored) { interruptionObserved.countDown(); /* simulated JDBC driver ignores interruption */ }
+            return late;
+        },100,100,leases);
+        try {
+            var open=new java.util.concurrent.FutureTask<Connection>(() -> service.openJdbcConnection("conn-1"));
+            Thread caller=new Thread(open,"connection-open-test");caller.start();
+            assertTrue(handshakeStarted.await(1,TimeUnit.SECONDS), "the fake JDBC driver must enter before the deadline is tested");
+            var timeout=assertThrows(java.util.concurrent.ExecutionException.class,()->open.get(2,TimeUnit.SECONDS));
+            assertTrue(timeout.getCause() instanceof ConnectTimeoutException, "expected the application-owned connection deadline");
+            assertTrue(interruptionObserved.await(1,TimeUnit.SECONDS), "the watchdog interrupts the JDBC handshake worker");
+            assertEquals(1,leases.snapshot().ordinaryTickets());
+            releaseHandshake.countDown();
+            long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(3);
+            while(leases.snapshot().ordinaryTickets()!=0&&System.nanoTime()<deadline) Thread.sleep(10);
+            assertEquals(0,leases.snapshot().ordinaryTickets());
+            org.mockito.Mockito.verify(late).close();
+        } finally { releaseHandshake.countDown(); leases.close(); }
+    }
+
+    @Test
+    void lateConnectionRuntimeCloseFailureRetriesUntilLeaseIsReleased() throws Exception {
+        ConnectionStore store=mock(ConnectionStore.class);KeychainStore keychain=mock(KeychainStore.class);
+        when(store.findById("conn-1")).thenReturn(Optional.of(config()));when(keychain.retrieve("conn-1")).thenReturn("pw");
+        WorkloadLeaseManager leases=new WorkloadLeaseManager();CountDownLatch releaseHandshake=new CountDownLatch(1);
+        Connection late=mock(Connection.class);CountDownLatch handshakeStarted=new CountDownLatch(1);java.util.concurrent.atomic.AtomicInteger closes=new java.util.concurrent.atomic.AtomicInteger();
+        org.mockito.Mockito.doAnswer(invocation->{if(closes.incrementAndGet()==1)throw new IllegalStateException("injected late close failure");return null;}).when(late).close();
+        ConnectionService service=new ConnectionService(store,keychain,DatabaseStrategyFactory.withBuiltinStrategies(),(url,user,password)->{
+            handshakeStarted.countDown();
+            while(releaseHandshake.getCount()!=0) try { releaseHandshake.await(); }
+            catch(InterruptedException ignored) { /* simulated JDBC driver ignores interruption */ }
+            return late;
+        },100,100,leases);
+        try {
+            var open=new java.util.concurrent.FutureTask<Connection>(() -> service.openJdbcConnection("conn-1"));
+            Thread caller=new Thread(open,"connection-open-late-runtime-test");caller.start();
+            assertTrue(handshakeStarted.await(1,TimeUnit.SECONDS));
+            var timeout=assertThrows(java.util.concurrent.ExecutionException.class,()->open.get(2,TimeUnit.SECONDS));
+            assertTrue(timeout.getCause() instanceof ConnectTimeoutException);
+            assertEquals(1,leases.snapshot().ordinaryTickets());
+            releaseHandshake.countDown();
+            long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(4);
+            while(leases.snapshot().ordinaryTickets()!=0&&System.nanoTime()<deadline) Thread.sleep(20);
+            assertEquals(0,leases.snapshot().ordinaryTickets());
+            assertTrue(closes.get()>=2);
+        } finally { releaseHandshake.countDown(); leases.close(); }
     }
 }

@@ -10,7 +10,7 @@ import { useExecution } from './hooks/useExecution'
 import { useFragmentCompare } from './hooks/useFragmentCompare'
 import CompareView, { type CompareHandle } from './components/Compare/CompareView'
 import { useTaskNotices, dismissTaskNotice } from './utils/taskNotices'
-import { useDiagnostics } from './hooks/useDiagnostics'
+import { usePlanDiagnostics } from './hooks/usePlanDiagnostics'
 import { useSessions } from './hooks/useSessions'
 import { useHistory } from './hooks/useHistory'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
@@ -34,9 +34,12 @@ import { useAddBackExploration } from './hooks/useAddBackExploration'
 import { computeAddBackCandidates } from './utils/addBackProjection'
 import { ExperimentContext } from './components/Editor/ExperimentContext'
 import SqlViewer from './components/Editor/SqlViewer'
+import OptimizationPanel from './components/Optimization/OptimizationPanel'
 import ConnectionManager from './components/Connection/ConnectionManager'
 import ResultsPanel from './components/Results/ResultsPanel'
+import { checkMappingReveal, type MappingRevealRequest } from './utils/mappingTargets'
 import HistoryDock from './components/History/HistoryDock'
+import InvestigationHistory from './components/Investigation/InvestigationHistory'
 import LineageChip from './components/Lineage/LineageChip'
 import TabBar from './components/Tabs/TabBar'
 import OverlayHost, { type OverlayHandle } from './components/Overlay/OverlayHost'
@@ -166,6 +169,14 @@ function AppInner() {
     theme: appSettings.theme,
   })
 
+  // Body-mounted Radix portals share the same theme as app-mounted content.
+  useEffect(() => {
+    const root = document.documentElement
+    root.classList.toggle('theme-light', settings.theme === 'light')
+    root.classList.toggle('theme-high-contrast', settings.theme === 'high-contrast')
+    return () => { root.classList.remove('theme-light', 'theme-high-contrast') }
+  }, [settings.theme])
+
   // Multi-tab: tabsApi owns the tab list + activeSessionId; activeSession
   // loads the active session's payload (sqlText, fragmentTreeJson, ...).
   // currentSql is derived from tabsApi.activeWorkspace.sql — the per-tab
@@ -239,11 +250,20 @@ function AppInner() {
       sql: isBrowsing ? selectedNode?.sqlFragment : tabsApi.activeWorkspace?.sql, revision: treeEpoch }
   )
 
-  // Diagnostics: lifted out of ResultsPanel so App can auto-trigger an
-  // analyze() whenever a plan lands in Performance mode. The hook is still
-  // stable per render — ResultsPanel only consumes the returned state.
-  const diagnosticScope = JSON.stringify([tabsApi.activeSessionId, selectedNodeId, selectedConnectionId, treeEpoch])
-  const diagnostics = useDiagnostics(backendUrl, diagnosticScope)
+  const currentMode: WorkspaceMode = tabsApi.activeSessionId
+    ? tabsApi.getMode(tabsApi.activeSessionId) : 'data'
+  const diagnosticSql = isBrowsing ? selectedNode?.sqlFragment : tabsApi.activeWorkspace?.sql
+  const diagnosticPlan = execution.planResult
+  const diagnostics = usePlanDiagnostics(backendUrl,
+    diagnosticPlan?.plan && selectedConnectionId && diagnosticSql
+      && execution.provenance?.sql === diagnosticSql
+      && execution.provenance.connectionId === selectedConnectionId
+      && execution.provenance.dialect === effectiveDialect
+      && (!isBrowsing || selectedNode && parsedDialect === effectiveDialect) ? {
+        kind: isBrowsing ? 'fragment' : 'input', sessionId: tabsApi.activeSessionId,
+        connectionId: selectedConnectionId, dialect: effectiveDialect, revision: treeEpoch,
+        sql: diagnosticSql, result: diagnosticPlan, fragment: isBrowsing ? selectedNode : null,
+      } : null, currentMode === 'performance', isWorkspaceExitLocked())
 
   // Row trace: async polling hook for Expected Row Trace feature.
   const rowTrace = useRowTrace(backendUrl, JSON.stringify([tabsApi.activeSessionId, selectedConnectionId, treeEpoch]))
@@ -262,12 +282,6 @@ function AppInner() {
     return () => clearInterval(timer)
   }, [backendUrl, history.fetchHistory])
 
-  // Workspace mode is per-tab (see memory 2026-06-25 / useTabs.getMode).
-  // Switching tabs restores the mode that was active when the tab was
-  // last used; new tabs default to 'data'.
-  const currentMode: WorkspaceMode = tabsApi.activeSessionId
-    ? tabsApi.getMode(tabsApi.activeSessionId)
-    : 'data'
   const handleModeChange = useCallback(
     (next: WorkspaceMode) => {
       if (!tabsApi.activeSessionId) return
@@ -275,34 +289,6 @@ function AppInner() {
     },
     [tabsApi]
   )
-
-  // Dedup ref (spec work item 4): the diagnostics auto-trigger must not
-  // re-fire for the same (node, plan) pair. planResult is double-cached
-  // (dataResultCache / planResultCache) and retains its reference across
-  // data↔performance mode switches, so without this guard a
-  // Performance→Data→Performance round-trip re-POSTs /api/diagnostics/analyze
-  // for an unchanged plan. Plan identity is compared by reference (===): a
-  // new analyze() produces a new plan object; a mode round-trip reuses it.
-  const lastDiagRef = useRef<{ nodeId: string; plan: unknown; scope: string } | null>(null)
-
-  // Auto-trigger: when in Performance mode and a fresh plan has arrived
-  // for the active node, ask the backend to diagnose it. Re-runs only when
-  // the plan reference changes (a new analyze), not on every render.
-  useEffect(() => {
-    if (currentMode !== 'performance') return
-    const plan = execution.planResult?.plan
-    const diagnosticNode = isBrowsing ? selectedNode : parsedSql === tabsApi.activeWorkspace?.sql ? result?.tree : null
-    if (!plan || !diagnosticNode || parsedDialect !== effectiveDialect) return
-    const last = lastDiagRef.current
-    if (last && last.nodeId === diagnosticNode.id && last.plan === plan && last.scope === diagnosticScope) return
-    lastDiagRef.current = { nodeId: diagnosticNode.id, plan, scope: diagnosticScope }
-    void diagnostics.analyze(diagnosticNode, plan, execution.planResult?.timing ?? null, tabsApi.activeWorkspace?.sessionId ?? null, { executionId: execution.planResult!.executionId, connectionId: selectedConnectionId })
-    // Intentionally omit `diagnostics` from deps — it's a stable useCallback
-    // identity inside useDiagnostics, so re-running on identity churn would
-    // re-fire the request every render. We only want to fire when the plan
-    // itself changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentMode, execution.planResult, selectedNode, diagnosticScope, isBrowsing, parsedDialect, effectiveDialect, parsedSql, tabsApi.activeWorkspace?.sql, result?.tree])
 
   // ── 加回探索（spec §4.3）──
   // 投影是**渲染期视图**：§4.3.7 —— 它从不写 result.tree，故 useSessionLifecycle
@@ -338,8 +324,14 @@ function AppInner() {
   })
 
   const [buildPanelOpen, setBuildPanelOpen] = useState(false)
-  const [evidenceReveal, setEvidenceReveal] = useState<{ id: string; sequence: number } | null>(null)
+  const [evidenceReveal, setEvidenceReveal] = useState<{ id: string; sequence: number; scope: string; executionId?: string; projection?: FragmentNode | null } | null>(null)
   const displayedTree = addBackActive ? addBackTree : (result?.tree ?? null)
+  const revealScope = JSON.stringify([tabsApi.activeSessionId, selectedConnectionId, treeEpoch])
+  const validEvidenceReveal = evidenceReveal?.scope === revealScope
+    && (!evidenceReveal.executionId || (currentMode === 'performance' && evidenceReveal.executionId === execution.planResult?.executionId
+      && evidenceReveal.projection === displayedTree))
+    ? evidenceReveal : null
+  useEffect(() => { if (evidenceReveal && !validEvidenceReveal) setEvidenceReveal(null) }, [evidenceReveal, validEvidenceReveal])
 
   const handleBuildUpward = useCallback((nodeId: string) => {
     // enter() 内部已 selectNode(seed)；已激活时只切换选中面。
@@ -371,6 +363,7 @@ function AppInner() {
     Record<string, import('./hooks/useExecution').ExecutionSummaryLike>
   >({})
   // Overlay ref — dialogs/modals are managed by OverlayHost via imperative handle
+  const optimizationBlockers = useRef<() => string[]>(() => [])
   const overlayRef = useRef<OverlayHandle>(null)
 
   // ── Panel resize ──
@@ -461,7 +454,7 @@ function AppInner() {
     nodeMap: dag.nodeMap, dialect: effectiveDialect, submit: submitUserEdit, record: recordEditLink })
   const workspaceExit = useWorkspaceExit({ tabs: tabsApi, checkpoint,
     pending: parseLoading || Object.values(decomposing).some(Boolean) || edit.pending || storage.busy || storage.pending,
-    blockers: () => [...(overlayRef.current?.getExitBlockers?.() ?? []),
+    blockers: () => [...optimizationBlockers.current(), ...(overlayRef.current?.getExitBlockers?.() ?? []),
       ...(edit.feedback?.recovery ? ['An edit recovery operation has not been completed.'] : [])],
   })
   const compare = useFragmentCompare(tabsApi.tabs, { sessionId: tabsApi.activeSessionId, dag, parsedSql,
@@ -599,9 +592,10 @@ function AppInner() {
 
   const handleOpenInNewTab = useCallback(
     (sql: string) => {
+      if (workspaceExit.locked || booting) return
       void tabsApi.openInNewTab(sql, { connectionId: null })
     },
-    [tabsApi]
+    [tabsApi, workspaceExit.locked, booting]
   )
 
   const handleConnectionSelect = useCallback((id: string | null) => {
@@ -648,6 +642,12 @@ function AppInner() {
     onCancel: compare.state ? () => { if (execution.loading) void compareRef.current?.cancel(); else compare.close() } : () => execution.cancel(),
     onNewSession: compare.state ? () => {} : handleNewSession
   }, !workspaceExit.locked)
+
+  const mappingRevealAvailability = (request: MappingRevealRequest) => checkMappingReveal(request, {
+    locked: workspaceExit.locked, draftScope: revealScope,
+    executionId: execution.planResult?.executionId, provenance: execution.provenance,
+    node: dag.nodeMap.get(request.fragmentId), tree: displayedTree,
+  })
 
   return (
     <ExperimentSourcesContext.Provider value={dag}>
@@ -735,6 +735,7 @@ function AppInner() {
         onSwitch={tabsApi.switchTab}
         onClose={handleCloseTab}
         onCreate={() => void tabsApi.createTab()}
+        createDisabled={workspaceExit.locked || booting}
         onContextMenu={handleTabContextMenu}
       />
 
@@ -756,7 +757,7 @@ function AppInner() {
       <div className="main-content">
         {/* Left Panel — Fragment Tree */}
         <FragmentTree
-          revealRequest={evidenceReveal}
+          revealRequest={validEvidenceReveal}
           tree={displayedTree}
           loading={parseLoading}
           error={parseError}
@@ -904,6 +905,12 @@ function AppInner() {
                     )}
                   </div>
 
+                  <OptimizationPanel backendUrl={backendUrl} sessionId={tabsApi.activeSessionId}
+                    sql={viewerSql} connectionId={selectedConnectionId} dialect={effectiveDialect}
+                    revision={String(treeEpoch) + ':' + (isBrowsing ? selectedNodeId ?? 'browse' : 'input')}
+                    connectionRevision={JSON.stringify(queryConnection ? [queryConnection.id, queryConnection.host, queryConnection.port, queryConnection.database, queryConnection.username, queryConnection.dialect, queryConnection.updatedAt, queryConnection.connectionType, queryConnection.trustServerCertificate] : null)}
+                    disabled={workspaceExit.locked || booting || tabsApi.activeWorkspace?.hydration !== 'ready'} blockersRef={optimizationBlockers}
+                    onAdopt={(sql, source, intent, onError) => tabsApi.openInNewTab(sql, { intent, connectionId: source.connectionId, dialect: source.dialect, name: tr('Optimization candidate'), onError })} />
                   {/* Session Group - Compare, New */}
                   <div className="toolbar-group toolbar-group-session">
                     {hasResult && (
@@ -917,7 +924,7 @@ function AppInner() {
                           {tr("⊞ Compare")}{" "}</button>
                       </>
                     )}
-                    <button className="toolbar-btn toolbar-btn-ghost" onClick={handleNewSession} title={tr("New tab (Ctrl+N)")}>{tr("+ New")}</button>
+                    <button className="toolbar-btn toolbar-btn-ghost" onClick={handleNewSession} disabled={workspaceExit.locked || booting} title={tr("New tab (Ctrl+N)")}>{tr("+ New")}</button>
                   </div>
                 </div>
               {selectedNodeId && <ExperimentContext key={`${tabsApi.activeSessionId}:${selectedConnectionId}:${treeEpoch}:${selectedNodeId}`} nodeId={selectedNodeId} dag={dag} onRetry={decomposeNode} />}
@@ -960,7 +967,17 @@ function AppInner() {
               onVerify={handleVerifyFinding}
               fragmentTreeJson={traceTreeJson}
               connectionId={selectedConnectionId}
+              sessionId={tabsApi.activeSessionId}
               draftScope={JSON.stringify([tabsApi.activeSessionId, selectedConnectionId, treeEpoch])}
+              checkMappingReveal={mappingRevealAvailability}
+              onMappingReveal={(request: MappingRevealRequest) => {
+                const availability = mappingRevealAvailability(request)
+                if (availability.status === 'READY') setEvidenceReveal(prev => ({
+                  id: request.fragmentId, sequence: (prev?.sequence ?? 0) + 1,
+                  scope: revealScope, executionId: request.executionId, projection: displayedTree,
+                }))
+                return availability
+              }}
               rowTrace={{ ...rowTrace, trace: (connectionId, tree, keys, options) => rowTrace.trace(connectionId, tree, keys,
                 { ...options, transformEdges: [...dag.ruleResults.values()].flatMap(r => r.outputs ?? []) }) }}
               canLocateEvidence={(id, sql) => !workspaceExit.locked && !!rowTrace.snapshot &&
@@ -971,7 +988,8 @@ function AppInner() {
                   rowTrace.snapshot.sqlById[id] !== sql || dag.nodeMap.get(id)?.sqlFragment !== sql) return
                 if (addBackActive) exitAddBack()
                 handleNodeSelect(id)
-                setEvidenceReveal(prev => ({ id, sequence: (prev?.sequence ?? 0) + 1 }))
+                setEvidenceReveal(prev => ({ id, sequence: (prev?.sequence ?? 0) + 1,
+                  scope: JSON.stringify([tabsApi.activeSessionId, selectedConnectionId, treeEpoch]) }))
               }}
             />
           </main>
@@ -983,6 +1001,7 @@ function AppInner() {
       </div>
 
       <div className="app-statusbar">          <div className="connection-indicator">
+            <InvestigationHistory backendUrl={backendUrl} />
             <span
               className={`status-dot ${status?.status === 'UP' ? 'status-up' : 'status-down'}`}
             />
@@ -1004,6 +1023,7 @@ function AppInner() {
         loading={history.loading}
         onRefresh={() => history.fetchHistory()}
         onOpenInNewTab={handleOpenInNewTab}
+        openInNewTabDisabled={workspaceExit.locked || booting}
       />
 
       {/* All dialogs/modals managed by OverlayHost (Task 5 refactor) */}

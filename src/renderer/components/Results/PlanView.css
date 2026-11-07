@@ -125,3 +125,28 @@
 .plan-row .plan-rows, .plan-header-rows { min-width: 160px; }
 .plan-row .plan-time, .plan-header-time { min-width: 180px; }
 .plan-cost { overflow-wrap: anywhere; }
+
+.plan-tools { display: flex; gap: var(--space-sm); align-items: center; flex-wrap: wrap; padding: var(--space-sm); }
+.plan-tools input, .plan-tools select { min-height: 28px; background: var(--bg-app); color: var(--text-primary); border: 1px solid var(--border); border-radius: 4px; max-width: 220px; }
+button.plan-row { width: 100%; background: transparent; color: var(--text-primary); font: inherit; text-align: left; cursor: pointer; border-top: 0; border-left: 0; border-right: 0; }
+button.plan-row[aria-pressed="true"] { background: var(--bg-surface-elevated); box-shadow: inset 3px 0 var(--accent); }
+.plan-tools :focus-visible, button.plan-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.plan-node-details { padding: var(--space-sm); border-top: 1px solid var(--border); }
+.plan-node-details:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.plan-node-details h3 { font-size: 13px; margin: var(--space-xs) 0; }
+.plan-metric { margin: var(--space-xs) 0; overflow-wrap: anywhere; }
+.plan-node-details pre, .plan-raw pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.plan-mapping { margin-top: var(--space-sm); border-top: 1px solid var(--border); overflow-wrap: anywhere; }
+.plan-mapping h4, .plan-mapping p { margin: var(--space-xs) 0; }
+.plan-mapping { font-family: var(--font-ui); }
+.plan-mapping-edge { padding: var(--space-xs) 0; border-bottom: 1px solid var(--border); }
+.plan-mapping button { min-height: 28px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-surface); color: var(--text-primary); font: inherit; cursor: pointer; }
+.plan-mapping button:hover { background: var(--bg-surface-elevated); }
+.plan-mapping button:disabled { cursor: default; opacity: .65; }
+.plan-mapping button:focus-visible, .mapping-preview:focus-visible, .mapping-preview pre:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mapping-unavailable { color: var(--text-secondary); }
+.mapping-unavailable code { font-family: var(--font-mono); }
+.mapping-preview { margin-top: var(--space-sm); padding: var(--space-sm); border: 1px solid var(--border); border-radius: 4px; background: var(--bg-surface); }
+.mapping-preview-tools { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); }
+.mapping-preview pre { max-height: 240px; overflow: auto; position: relative; padding: var(--space-sm); font-family: var(--font-mono); font-size: 13px; line-height: 20px; white-space: pre !important; overflow-wrap: normal !important; background: var(--bg-app); color: var(--text-primary); }
+.mapping-preview mark { color: var(--text-primary); background: var(--bg-surface-elevated); outline: 1px solid var(--accent); }

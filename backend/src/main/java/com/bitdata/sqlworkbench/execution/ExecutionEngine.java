@@ -52,6 +52,8 @@ public class ExecutionEngine {
     });
     @org.springframework.beans.factory.annotation.Autowired(required=false)
     private com.bitdata.sqlworkbench.history.HistoryStore historyStore;
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    private PlanObservationReceiptStore observationReceiptStore;
 
     @org.springframework.beans.factory.annotation.Autowired
     public ExecutionEngine(
@@ -212,6 +214,28 @@ public class ExecutionEngine {
         }
     }
 
+    /** Retry a failed receipt write only from the exact still-retained server result. */
+    public ExecutionResult retryObservationReceipt(String executionId, String sql, String connectionId, String sessionId) {
+        ExecutionContext ctx = executions.get(executionId);
+        if (ctx == null) throw new PlanObservationReceiptStore.Failure(410, "SNAPSHOT_OBSERVATION_EXPIRED");
+        synchronized (ctx) {
+            PlanObservation resolved = resolvePlanObservation(executionId, sql, connectionId, sessionId);
+            if (!"VERIFIED".equals(resolved.sourceState()) || resolved.result() == null)
+                throw new PlanObservationReceiptStore.Failure(410, "SNAPSHOT_OBSERVATION_EXPIRED");
+            if (resolved.result().observationReceipt() == null || !"FAILED".equals(resolved.result().observationReceipt().status()))
+                throw new PlanObservationReceiptStore.Failure(409, "SNAPSHOT_RETRY_NOT_APPLICABLE");
+            if (observationReceiptStore == null)
+                throw new PlanObservationReceiptStore.Failure(503, "SNAPSHOT_RECEIPT_STORE_UNAVAILABLE");
+            var saved = observationReceiptStore.save(resolved.result(), sessionId, connectionId, ctx.capture.dialect());
+            if (!"SAVED".equals(saved.status()))
+                throw new PlanObservationReceiptStore.Failure(503, saved.errorReason());
+            ExecutionResult updated = resolved.result().withObservationReceipt(
+                    new ExecutionResult.ObservationReceipt("SAVED", saved.receiptId(), null));
+            ctx.published = new Published(ctx.published.status(), updated);
+            return updated;
+        }
+    }
+
     // ─── Internals ─────────────────────────────────────────────────────────
 
     private String submit(String sql, String connectionId, Kind kind,
@@ -221,6 +245,7 @@ public class ExecutionEngine {
     private String submit(String sql,String connectionId,Kind kind,Integer queryTimeoutSeconds,Integer maxRows,String analyzeMode,String sessionId) {
         String executionId = UUID.randomUUID().toString();
         ExecutionContext ctx = new ExecutionContext(executionId, sql, connectionId, kind, analyzeMode);
+        ctx.observationReceiptStore = observationReceiptStore;
         ctx.ticker = ticker;
         ctx.sessionId=sessionId;
         if(kind==Kind.ANALYZE) ctx.capture=new PlanCapture(1,analyzeMode,null,sql,null,connectionId,sessionId,"unknown",null,null,null,null,"NOT_STARTED",List.of());
@@ -418,8 +443,10 @@ public class ExecutionEngine {
             String message = resolved == ExecutionStatus.TIMED_OUT
                 ? "Query timed out after " + ctx.effectiveTimeoutSeconds + "s"
                 : e.getMessage();
-            ctx.publish(resolved, errorResultWithTiming(ctx.executionId, resolved, message,
-                System.currentTimeMillis() - startTime));
+            ExecutionResult failure=errorResultWithTiming(ctx.executionId, resolved, message,
+                System.currentTimeMillis() - startTime);
+            if(e instanceof com.bitdata.sqlworkbench.connection.WorkloadBusyException) failure=failure.withFailureReason("WORKLOAD_BUSY");
+            ctx.publish(resolved, failure);
             log.warn("Execution {} {}: {}", ctx.executionId, resolved, e.getMessage());
         } catch (Exception e) {
             ctx.publish(ExecutionStatus.FAILED, errorResultWithTiming(ctx.executionId,
@@ -435,7 +462,7 @@ public class ExecutionEngine {
         String dialect = lookupDialect(ctx.connectionId);
         ctx.capture=new PlanCapture(1,ctx.analyzeMode,null,ctx.sql,null,ctx.connectionId,ctx.sessionId,dialect,null,null,null,null,"NOT_STARTED",List.of());
         if (!passesSelectGuard(ctx, dialect)) return;
-        if(!explainServiceFactory.supports(dialect) || ("mysql".equals(dialect) && "actual".equals(ctx.analyzeMode))) {
+        if(!explainServiceFactory.supports(dialect)) {
             ctx.publish(ExecutionStatus.FAILED,errorResult(ctx.executionId,ExecutionStatus.FAILED,
                 "This application does not support the requested plan channel").withCredentialFailure("APPLICATION_CHANNEL_UNSUPPORTED"));
             return;
@@ -460,6 +487,8 @@ public class ExecutionEngine {
                 strategy.configureReadOnly(conn);
             }
 
+            var environment=PlanEvidence.environment(conn,dialect,ctx.effectiveTimeoutSeconds);
+
             try (Statement stmt = conn.createStatement()) {
                 ctx.statement = stmt;
                 stmt.setQueryTimeout(ctx.effectiveTimeoutSeconds);
@@ -475,6 +504,7 @@ public class ExecutionEngine {
                 } else {
                     explainSql = strategy.getExplainSql(ctx.sql);
                 }
+                String channel="mysql".equals(dialect)?("actual".equals(ctx.analyzeMode)?"MYSQL_TREE":"MYSQL_JSON"):"POSTGRESQL_JSON";
                 ctx.capture=new PlanCapture(1,ctx.analyzeMode,ctx.analyzeMode,ctx.sql,explainSql,ctx.connectionId,ctx.sessionId,dialect,
                     capabilities.serverProduct(),capabilities.serverVersion(),null,capabilities,"NOT_STARTED",List.of());
                 try (ResultSet rs = stmt.executeQuery(explainSql)) {
@@ -483,10 +513,11 @@ public class ExecutionEngine {
                     if (rs.next()) {
                         String explainJson = rs.getString(1);
                         ExplainService explainService = explainServiceFactory.get(strategy.dialect());
-                        ExplainService.Parsed parsed=explainService.parseDetailed(explainJson,strategy.dialect());
+                        boolean shape=rs.getMetaData()!=null && rs.getMetaData().getColumnCount()==1 && !rs.next();
+                        ExplainService.Parsed parsed=shape?explainService.parseDetailed(explainJson,strategy.dialect(),channel):ExplainService.failed("PLAN_RESULT_SHAPE_UNSUPPORTED");
                         plan=parsed.plan();
                         ctx.capture=new PlanCapture(1,ctx.analyzeMode,ctx.analyzeMode,ctx.sql,explainSql,ctx.connectionId,ctx.sessionId,dialect,
-                            capabilities.serverProduct(),capabilities.serverVersion(),java.time.Instant.now().toString(),capabilities,parsed.status(),parsed.issues());
+                            capabilities.serverProduct(),capabilities.serverVersion(),java.time.Instant.now().toString(),capabilities,parsed.status(),parsed.issues()).withDetails(PlanEvidence.capture(explainJson,channel,plan,environment));
                         if (plan == null) {
                             planError = "EXPLAIN output could not be parsed as a plan tree";
                         }
@@ -497,14 +528,21 @@ public class ExecutionEngine {
                             List.of(new PlanCapture.Issue("PLAN_PARSE_FAILED",null,planError)));
                     }
 
+                    String detailsError=ctx.capture.details()==null?null:ctx.capture.details().errorReason();
+                    if(detailsError!=null) {
+                        var issues=new java.util.ArrayList<>(ctx.capture.issues());
+                        issues.add(new PlanCapture.Issue(detailsError,null,"Plan evidence or environment capture incomplete"));
+                        ctx.capture=new PlanCapture(ctx.capture.version(),ctx.capture.requestedMode(),ctx.capture.attemptedMode(),ctx.capture.submittedSql(),ctx.capture.explainSql(),ctx.capture.connectionId(),ctx.capture.sessionId(),ctx.capture.dialect(),ctx.capture.serverProduct(),ctx.capture.serverVersion(),ctx.capture.capturedAt(),ctx.capture.capabilities(),ctx.capture.parseStatus(),issues,ctx.capture.details());
+                    }
+                    String resultReason="FAILED".equals(ctx.capture.parseStatus())?(ctx.capture.issues().isEmpty()?"PLAN_PARSE_FAILED":ctx.capture.issues().get(0).code()):"PARTIAL".equals(ctx.capture.parseStatus())?"PLAN_PARTIAL":detailsError;
                     long duration = System.currentTimeMillis() - startTime;
                     ctx.publish(ExecutionStatus.COMPLETED, new ExecutionResult(
                         ctx.executionId, ExecutionStatus.COMPLETED,
                         null, null, 0,
                         new ExecutionResult.Timing(duration),
                         plan, planError, null, null,
-                        "FAILED".equals(ctx.capture.parseStatus())?"PLAN_PARSE_FAILED":"PARTIAL".equals(ctx.capture.parseStatus())?"PLAN_PARTIAL":null,
-                        !"COMPLETE".equals(ctx.capture.parseStatus())
+                        resultReason,
+                        !"COMPLETE".equals(ctx.capture.parseStatus()) || detailsError!=null
                     ));
                     log.info("Analyze {} completed: plan={} in {}ms",
                         ctx.executionId, plan != null ? "captured" : "null", duration);
@@ -534,8 +572,10 @@ public class ExecutionEngine {
             // the log's position no longer matters; it stays here for a minimal
             // diff. Side effect: during the log I/O getStatus now reads RUNNING
             // instead of a false terminal — strictly the safer read.
-            ctx.publish(resolved, analyzeErrorResult(ctx.executionId, resolved, message,
-                System.currentTimeMillis() - startTime));
+            ExecutionResult failure=analyzeErrorResult(ctx.executionId, resolved, message,
+                System.currentTimeMillis() - startTime);
+            if(e instanceof com.bitdata.sqlworkbench.connection.WorkloadBusyException) failure=failure.withFailureReason("WORKLOAD_BUSY");
+            ctx.publish(resolved, failure);
         } catch (Exception e) {
             log.warn("Analyze {} failed (non-SQL): {}", ctx.executionId, e.getMessage(), e);
             ctx.publish(ExecutionStatus.FAILED, analyzeErrorResult(ctx.executionId,
@@ -599,6 +639,7 @@ public class ExecutionEngine {
     private enum Kind { EXECUTE, ANALYZE }
 
     private static class ExecutionContext {
+        PlanObservationReceiptStore observationReceiptStore;
         java.util.function.LongSupplier ticker = System::nanoTime;
         long terminalAt;
         boolean hasTerminalTime;
@@ -636,7 +677,18 @@ public class ExecutionEngine {
                 return false;
             }
             if (status != null && status.isTerminal()) { terminalAt = ticker.getAsLong(); hasTerminalTime = true; }
-            if(kind==Kind.ANALYZE && result!=null) result=result.withCapture(capture);
+            if(kind==Kind.ANALYZE && result!=null) {
+                result=result.withCapture(capture);
+                if (status == ExecutionStatus.COMPLETED && result.plan() != null && result.planCapture() != null) {
+                    PlanObservationReceiptStore.Result receipt;
+                    if (observationReceiptStore == null) receipt = new PlanObservationReceiptStore.Result("FAILED", null, "SNAPSHOT_RECEIPT_STORE_UNAVAILABLE");
+                    else receipt = observationReceiptStore.save(result, sessionId, connectionId, capture.dialect());
+                    result = result.withObservationReceipt(new ExecutionResult.ObservationReceipt(receipt.status(), receipt.receiptId(), receipt.errorReason()));
+                } else if (status != null && status.isTerminal()) {
+                    result = result.withObservationReceipt(new ExecutionResult.ObservationReceipt("NOT_APPLICABLE", null,
+                            status == ExecutionStatus.COMPLETED ? "PLAN_OBSERVATION_UNAVAILABLE" : "ANALYZE_NOT_COMPLETED"));
+                }
+            }
             this.published = new Published(status, result);
             return true;
         }

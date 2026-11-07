@@ -2,7 +2,7 @@
   display: flex;
   flex-direction: column;
   background: var(--bg-secondary);
-  border-top: 1px solid var(--border-color);
+  border-top: 1px solid var(--border);
   padding: 8px 12px;
   gap: 6px;
   max-height: 140px;
@@ -34,7 +34,7 @@
 }
 
 .history-refresh-btn:hover {
-  background: var(--bg-hover);
+  background: var(--bg-surface-hover);
   color: var(--text-primary);
 }
 
@@ -60,7 +60,7 @@
 }
 
 .history-entry:hover {
-  background: var(--bg-hover);
+  background: var(--bg-surface-hover);
 }
 
 .history-sql-text {

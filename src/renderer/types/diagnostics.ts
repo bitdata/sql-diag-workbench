@@ -3,6 +3,7 @@ export type Severity = 'HIGH' | 'MEDIUM' | 'LOW'
 export type FindingStatus = 'SUSPECTED' | 'CONFIRMED' | 'REFUTED'
 
 export interface DiagnosticFinding {
+  planNodePath?: string | null
   id: string
   ruleId: string
   severity: Severity

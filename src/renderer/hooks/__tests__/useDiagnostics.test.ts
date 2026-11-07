@@ -4,9 +4,21 @@ import { renderHook, act } from '@testing-library/react'
 import { useDiagnostics } from '../useDiagnostics'
 import { mockFetchResponses, lastFetchBody, resetMocks } from '../../test/testUtils'
 
+const evaluation = { version: 1, executionId: null, sourceState: 'VERIFIED', rules: [], degraded: false, errorReason: null }
+
 describe('useDiagnostics', () => {
   beforeEach(() => {
     resetMocks()
+  })
+
+  it('analyzePlan sends exact original text without a fragment or client plan', async () => {
+    mockFetchResponses({ body: { findings: [], evaluation: { ...evaluation, executionId: 'exec-original' } } })
+    const { result } = renderHook(() => useDiagnostics('http://localhost:8080'))
+    const sql = 'select /* keep text */ 1 AS x'
+    await act(async () => { await result.current.analyzePlan(sql, 's', { executionId: 'exec-original', connectionId: 'c' }) })
+    expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBe('http://localhost:8080/api/diagnostics/plan')
+    expect(lastFetchBody()).toEqual({ sql, sessionId: 's', executionId: 'exec-original', connectionId: 'c' })
+    expect(result.current.evaluation?.executionId).toBe('exec-original')
   })
 
   it('analyze() populates findings from backend response', async () => {
@@ -25,7 +37,7 @@ describe('useDiagnostics', () => {
         verificationResult: null,
       },
     ]
-    mockFetchResponses({ body: { findings } })
+    mockFetchResponses({ body: { findings, evaluation } })
 
     const { result } = renderHook(() => useDiagnostics('http://localhost:8080'))
 
@@ -43,7 +55,7 @@ describe('useDiagnostics', () => {
   })
 
   it('analyze() sends correct POST body and URL', async () => {
-    mockFetchResponses({ body: { findings: [] } })
+    mockFetchResponses({ body: { findings: [], evaluation } })
 
     const { result } = renderHook(() => useDiagnostics('http://localhost:8080'))
 
@@ -65,7 +77,7 @@ describe('useDiagnostics', () => {
   })
 
   it('analyze() with empty findings array — no error, findings is []', async () => {
-    mockFetchResponses({ body: { findings: [] } })
+    mockFetchResponses({ body: { findings: [], evaluation } })
 
     const { result } = renderHook(() => useDiagnostics('http://localhost:8080'))
 
@@ -78,8 +90,8 @@ describe('useDiagnostics', () => {
     expect(result.current.loading).toBe(false)
   })
 
-  it('analyze() handles missing findings key (defaults to [])', async () => {
-    // Backend omits "findings" entirely — hook uses ?? [] fallback
+  it('analyze() rejects missing findings instead of claiming an empty analysis', async () => {
+    // Missing findings is a protocol error, not a completed empty evaluation.
     mockFetchResponses({ body: {} })
 
     const { result } = renderHook(() => useDiagnostics('http://localhost:8080'))
@@ -89,7 +101,7 @@ describe('useDiagnostics', () => {
     })
 
     expect(result.current.findings).toEqual([])
-    expect(result.current.error).toBeNull()
+    expect(result.current.lifecycle.errorReason).toBe('DIAGNOSTICS_RESPONSE_INVALID')
     expect(result.current.loading).toBe(false)
   })
 
@@ -167,7 +179,7 @@ describe('useDiagnostics', () => {
         verificationResult: null,
       },
     ]
-    mockFetchResponses({ body: { findings } })
+    mockFetchResponses({ body: { findings, evaluation } })
 
     const { result } = renderHook(() => useDiagnostics('http://localhost:8080'))
 
@@ -229,7 +241,7 @@ describe('useDiagnostics', () => {
       status: 'SUSPECTED' as const, verificationResult: null,
     }]
     mockFetchResponses(
-      { body: { findings } },     // analyze response
+      { body: { findings, evaluation } },     // analyze response
       { body: { findingId: 'f1', status: 'CONFIRMED', resultSummary: '1 row(s) found' } }  // verify response
     )
 
@@ -256,7 +268,7 @@ describe('useDiagnostics', () => {
       verificationSql: 'SELECT 1', affectedNodeId: null,
       status: 'SUSPECTED' as const, verificationResult: null,
     }]
-    mockFetchResponses({ body: { findings } })
+    mockFetchResponses({ body: { findings, evaluation } })
 
     const { result } = renderHook(() => useDiagnostics('http://localhost:8080'))
 
@@ -270,7 +282,7 @@ describe('useDiagnostics', () => {
       new Promise(resolve => { resolveFetch = resolve })
     )
 
-    let verifyPromise: Promise<void>
+    let verifyPromise: Promise<unknown>
     act(() => {
       verifyPromise = result.current.verify('f1', 'SELECT 1', 'conn-1')
     })
@@ -295,7 +307,7 @@ describe('useDiagnostics', () => {
       verificationSql: 'SELECT 1', affectedNodeId: null,
       status: 'SUSPECTED' as const, verificationResult: null,
     }]
-    mockFetchResponses({ body: { findings } })
+    mockFetchResponses({ body: { findings, evaluation } })
 
     const { result } = renderHook(() => useDiagnostics('http://localhost:8080'))
 
@@ -320,7 +332,7 @@ describe('useDiagnostics', () => {
       verificationSql: 'SELECT 1', affectedNodeId: null,
       status: 'SUSPECTED' as const, verificationResult: null,
     }]
-    mockFetchResponses({ body: { findings } })
+    mockFetchResponses({ body: { findings, evaluation } })
 
     const { result } = renderHook(() => useDiagnostics('http://localhost:8080'))
 
@@ -345,7 +357,7 @@ describe('useDiagnostics', () => {
       verificationSql: 'SELECT 1', affectedNodeId: null,
       status: 'SUSPECTED' as const, verificationResult: null,
     }]
-    mockFetchResponses({ body: { findings } })
+    mockFetchResponses({ body: { findings, evaluation } })
 
     const { result } = renderHook(() => useDiagnostics('http://localhost:8080'))
 

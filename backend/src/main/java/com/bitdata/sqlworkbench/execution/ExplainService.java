@@ -30,12 +30,21 @@ public interface ExplainService {
         public Parsed { issues=java.util.List.copyOf(issues); }
     }
     default Parsed parseDetailed(String json,String dialect) {
+        String inputError=PlanLimits.jsonInputError(json);
+        if(inputError!=null)return failed(inputError);
         PlanNode plan=parse(json,dialect);
+        String treeError=PlanLimits.treeError(plan);
+        if(treeError!=null)return failed(treeError);
         var issues=new java.util.ArrayList<com.bitdata.sqlworkbench.execution.model.PlanCapture.Issue>();
         if(plan==null) issues.add(new com.bitdata.sqlworkbench.execution.model.PlanCapture.Issue("PLAN_PARSE_FAILED",null,"No recognized plan tree"));
         inspect(plan,issues);
         return new Parsed(plan,plan==null?"FAILED":issues.isEmpty()?"COMPLETE":"PARTIAL",issues);
     }
+    default Parsed parseDetailed(String raw,String dialect,String channel) {
+        if(!("POSTGRESQL_JSON".equals(channel)&&"postgresql".equals(dialect))&&!("MYSQL_JSON".equals(channel)&&"mysql".equals(dialect)))return failed("PLAN_CHANNEL_UNSUPPORTED");
+        return parseDetailed(raw,dialect);
+    }
+    static Parsed failed(String reason) {return new Parsed(null,"FAILED",java.util.List.of(new com.bitdata.sqlworkbench.execution.model.PlanCapture.Issue(reason,null,"Plan unavailable: "+reason)));}
     private static void inspect(PlanNode node,java.util.List<com.bitdata.sqlworkbench.execution.model.PlanCapture.Issue> issues) {
         if(node==null) return;
         var m=node.metrics();

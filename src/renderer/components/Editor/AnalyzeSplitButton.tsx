@@ -76,7 +76,7 @@ export function AnalyzeSplitButton({ onAnalyze, disabled, title, backendUrl, con
           <div className="analyze-capability-note" role="status">
             <p>{tr("Actual runs the query. Timeout and Stop request cancellation.")}</p>
             {reason('estimated') && <p>{tr("Estimated:")}{" "}{reason('estimated')}</p>}
-            {reason('actual') && <p>{tr("Actual:")}{" "}{reason('actual')}{capabilities?.dialect === 'mysql' ? tr(" — MySQL runtime output is not adapted by this application.") : ''}</p>}
+            {reason('actual') && <p>{tr("Actual:")}{" "}{reason('actual')}</p>}
           </div>
           <DropdownMenu.Item className="analyze-dropdown-item" onSelect={event => { event.preventDefault(); setRetry(n => n + 1) }}>{tr("Retry capability detection")}</DropdownMenu.Item>
         </DropdownMenu.Content>

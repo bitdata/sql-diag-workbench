@@ -10,6 +10,13 @@ import java.util.*;
 import java.sql.*;
 
 class PhysicalSourcePlanServiceTest {
+    @Test void metadataWriterNormalizesBetweenButDoesNotGuessSymmetricMeaning() throws Exception {
+        var resolver=new SqlDialectResolver(DatabaseStrategyFactory.withBuiltinStrategies());
+        var shape=PhysicalSourcePlanService.shape("SELECT id FROM t WHERE id BETWEEN 1 AND 3","mysql",resolver);
+        assertTrue(shape.metadataSql().contains("BETWEEN"));assertFalse(shape.metadataSql().contains("ASYMMETRIC"));
+        var error=assertThrows(SqlSerializationException.class,()->PhysicalSourcePlanService.shape("SELECT id FROM t WHERE id BETWEEN SYMMETRIC 3 AND 1","mysql",resolver));
+        assertEquals("MYSQL_BETWEEN_SYMMETRIC_UNSUPPORTED",error.reason());
+    }
     private final SqlDialectResolver resolver=new SqlDialectResolver(DatabaseStrategyFactory.withBuiltinStrategies());
     @Test void directAliasedKeyRetainsActualSourceSpellingAndRemovesOnlyOuterPage() throws Exception {
         for(String dialect:List.of("postgresql","mysql")) {

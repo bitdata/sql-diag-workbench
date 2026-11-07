@@ -8,6 +8,7 @@ interface TabBarProps {
   onSwitch: (sessionId: string) => void
   onClose: (sessionId: string) => void
   onCreate: () => void
+  createDisabled: boolean
   onContextMenu: (tab: Tab, x: number, y: number) => void
 }
 
@@ -24,6 +25,7 @@ export default function TabBar({
   onSwitch,
   onClose,
   onCreate,
+  createDisabled,
   onContextMenu,
 }: TabBarProps) {
   useLocale()
@@ -79,6 +81,7 @@ export default function TabBar({
         type="button"
         className="tabbar-add"
         onClick={onCreate}
+        disabled={createDisabled}
         aria-label={tr("New tab")}
         title={tr("New tab")}
       >

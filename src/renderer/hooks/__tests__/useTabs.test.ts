@@ -141,6 +141,84 @@ describe('useTabs', () => {
     expect(result.current.activeSessionId).toBe('sess-2')
   })
 
+  it('waits for persisted tabs to hydrate before creating and preserves both sessions', async () => {
+    window.localStorage.setItem('tabs.v1', JSON.stringify({
+      tabSessionIds: ['existing'], activeSessionId: 'existing', modeBySession: {},
+    }))
+    let resolveHydration!: (response: any) => void
+    const hydration = new Promise<any>(resolve => { resolveHydration = resolve })
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/sessions/existing')) return hydration
+      if (url.endsWith('/api/sessions') && init?.method === 'POST') {
+        const request = JSON.parse(String(init.body))
+        return Promise.resolve({ ok: true, status: 201, json: () => Promise.resolve({
+          ...request, id: 'sess-new', updatedAt: UPDATED_AT,
+        }) })
+      }
+      throw new Error(`Unexpected request: ${init?.method ?? 'GET'} ${url}`)
+    })
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    const { result } = setup()
+    expect(result.current.booting).toBe(true)
+    let creation!: Promise<void>
+    act(() => { creation = result.current.createTab() })
+    expect(fetchMock).not.toHaveBeenCalledWith(`${BACKEND}/api/sessions`, expect.objectContaining({ method: 'POST' }))
+
+    await act(async () => {
+      resolveHydration({ ok: true, status: 200, json: () => Promise.resolve({
+        id: 'existing', name: 'Untitled 1', sqlText: 'SELECT 1', dialect: 'mysql',
+        connectionId: 'conn-1', updatedAt: UPDATED_AT,
+      }) })
+      await creation
+    })
+
+    expect(result.current.tabs.map(tab => tab.sessionId)).toEqual(['existing', 'sess-new'])
+    expect(result.current.tabs.map(tab => tab.name)).toEqual(['Untitled 1', 'Untitled 2'])
+    expect(result.current.activeSessionId).toBe('sess-new')
+    expect(JSON.parse(window.localStorage.getItem('tabs.v1')!).tabSessionIds).toEqual(['existing', 'sess-new'])
+    expect(lastFetchBody()).toMatchObject({ name: 'Untitled 2', dialect: 'mysql', connectionId: 'conn-1' })
+  })
+
+  it('waits for persisted tabs to hydrate before opening SQL in a new tab', async () => {
+    window.localStorage.setItem('tabs.v1', JSON.stringify({
+      tabSessionIds: ['existing'], activeSessionId: 'existing', modeBySession: {},
+    }))
+    let resolveHydration!: (response: any) => void
+    const hydration = new Promise<any>(resolve => { resolveHydration = resolve })
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/sessions/existing')) return hydration
+      if (url.endsWith('/api/sessions') && init?.method === 'POST') {
+        const request = JSON.parse(String(init.body))
+        return Promise.resolve({ ok: true, status: 201, json: () => Promise.resolve({
+          ...request, id: 'opened-sql', updatedAt: UPDATED_AT,
+        }) })
+      }
+      throw new Error(`Unexpected request: ${init?.method ?? 'GET'} ${url}`)
+    })
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    const { result } = setup()
+    let opening!: Promise<string | null>
+    act(() => { opening = result.current.openInNewTab('SELECT 42', { name: 'History SQL', dialect: 'mysql' }) })
+    expect(fetchMock).not.toHaveBeenCalledWith(`${BACKEND}/api/sessions`, expect.objectContaining({ method: 'POST' }))
+
+    await act(async () => {
+      resolveHydration({ ok: true, status: 200, json: () => Promise.resolve({
+        id: 'existing', name: 'Untitled 1', sqlText: 'SELECT 1', dialect: 'mysql',
+        connectionId: 'conn-1', updatedAt: UPDATED_AT,
+      }) })
+      await expect(opening).resolves.toBe('opened-sql')
+    })
+
+    expect(result.current.tabs.map(tab => tab.sessionId)).toEqual(['existing', 'opened-sql'])
+    expect(result.current.activeSessionId).toBe('opened-sql')
+    expect(JSON.parse(window.localStorage.getItem('tabs.v1')!).tabSessionIds).toEqual(['existing', 'opened-sql'])
+    expect(lastFetchBody()).toMatchObject({ name: 'History SQL', sqlText: 'SELECT 42', dialect: 'mysql', connectionId: null })
+  })
+
   it('switchTab() changes the active tab and its derived workspace', async () => {
     mockFetchResponses(
       { body: createdSession('sess-1') },

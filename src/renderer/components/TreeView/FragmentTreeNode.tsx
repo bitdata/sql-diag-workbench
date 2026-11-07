@@ -176,6 +176,7 @@ const FragmentTreeNode = memo(function FragmentTreeNode({
       <div
         ref={rowRef}
         className={`tree-node ${isSelected ? 'selected' : ''}`}
+        data-fragment-id={node.id}
         style={{ ['--tree-depth' as string]: depth }}
         role="treeitem"
         aria-expanded={hasChildren ? isExpanded : undefined}

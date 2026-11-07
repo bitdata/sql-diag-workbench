@@ -70,6 +70,7 @@ class FullChainPostgresIntegrationTest {
     @Autowired RowTraceEngine rowTrace;
     @Autowired TraceStore traceStore;
     @Autowired DiagnosticsController diagnostics;
+    @Autowired com.bitdata.sqlworkbench.diagnostics.RuleRegistry registry;
 
     private IntegrationFixtureSupport.Connection pgConn;
     private String connectionId;
@@ -213,7 +214,8 @@ class FullChainPostgresIntegrationTest {
         assertNotNull(resp, "diagnostics response must not be null");
         assertNotNull(resp.findings(), "findings list should be present");
         assertEquals("UNVERIFIED",resp.evaluation().sourceState());
-        assertEquals(7,resp.evaluation().rules().size());
+        assertEquals(registry.getRules().size(),resp.evaluation().rules().size());
+        assertEquals(registry.getRules().stream().map(rule->rule.id()).collect(java.util.stream.Collectors.toSet()),resp.evaluation().rules().stream().map(rule->rule.ruleId()).collect(java.util.stream.Collectors.toSet()));
         assertTrue(resp.findings().stream().noneMatch(f -> "sequential-scan".equals(f.ruleId())),
             "Client supplied synthetic plans are not authenticated evidence");
         for (DiagnosticFinding finding : resp.findings()) {

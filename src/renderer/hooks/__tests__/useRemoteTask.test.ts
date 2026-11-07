@@ -7,6 +7,29 @@ const response = (body: unknown, status = 200) => ({ ok: status < 400, status, j
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(r => { resolve = r }); return { promise, resolve } }
 const submit = (task: ReturnType<typeof useRemoteTask>, done = vi.fn()) => task.submit('/submit', '/tasks', 'id', {}, done)
 describe('remote task lifecycle', () => {
+  it('recognizes performance experiment admission rejection and expired receipt', async () => {
+    vi.mocked(apiFetch).mockResolvedValue(response({code:'EXPERIMENT_BUSY',errorReason:'WORKLOAD_BUSY'},409))
+    const {result,unmount}=renderHook(()=>useRemoteTask('http://backend'))
+    await act(async()=>{await result.current.submit('/api/optimization/experiments','/api/optimization/experiments','experimentId',{},vi.fn())})
+    expect(result.current.errorReason).toBe('SUBMISSION_REJECTED')
+    vi.mocked(apiFetch).mockResolvedValueOnce(response({experimentId:'experiment'})).mockResolvedValue(response({},410))
+    await act(async()=>{await result.current.submit('/api/optimization/experiments','/api/optimization/experiments','experimentId',{},vi.fn());await vi.advanceTimersByTimeAsync(600)})
+    expect(result.current.errorReason).toBe('TASK_EXPIRED')
+    expect(vi.mocked(apiFetch).mock.calls.filter(c=>c[1]?.method==='POST')).toHaveLength(2)
+    unmount()
+  })
+  it('classifies optimization rejection and expiry without replaying submission', async () => {
+    vi.mocked(apiFetch).mockResolvedValue(response({ code: 'OPTIMIZATION_SOURCE_CHANGED', errorReason: 'CONNECTION_CHANGED' }, 409))
+    const { result, unmount } = renderHook(() => useRemoteTask('http://backend'))
+    await act(async () => { await result.current.submit('/api/optimization/validations', '/api/optimization/validations', 'validationId', {}, vi.fn()) })
+    expect(result.current.errorReason).toBe('SUBMISSION_REJECTED')
+    vi.mocked(apiFetch).mockResolvedValueOnce(response({ validationId: 'id' })).mockResolvedValue(response({}, 410))
+    await act(async () => { await result.current.submit('/api/optimization/validations', '/api/optimization/validations', 'validationId', {}, vi.fn()) })
+    await act(async () => { await vi.advanceTimersByTimeAsync(600) })
+    expect(result.current.errorReason).toBe('TASK_EXPIRED')
+    expect(vi.mocked(apiFetch).mock.calls.filter(c => c[1]?.method === 'POST')).toHaveLength(2)
+    unmount()
+  })
   beforeEach(() => { vi.useFakeTimers(); vi.mocked(apiFetch).mockReset() })
   afterEach(() => vi.useRealTimers())
   it('recognizes only the exact pre-admission analyze rejection', async () => {

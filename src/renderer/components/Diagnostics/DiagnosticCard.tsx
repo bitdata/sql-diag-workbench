@@ -3,6 +3,7 @@ import type { DiagnosticFinding, FindingStatus, Severity } from '../../types/dia
 import './DiagnosticCard.css'
 
 interface DiagnosticCardProps {
+  onPlanEvidence?: (path: string) => void
   finding: DiagnosticFinding
   onVerify?: (findingId: string, verificationSql: string) => void
   isVerifying?: boolean
@@ -22,7 +23,7 @@ const STATUS_CONFIG: Record<FindingStatus, { label: string; color: string; icon:
   REFUTED:   { get label() { return tr("Refuted") }, color: 'var(--text-muted)', icon: '✓' },
 }
 
-export default function DiagnosticCard({ finding, onVerify, isVerifying, verifyError, onClearVerifyError }: DiagnosticCardProps) {
+export default function DiagnosticCard({ finding, onVerify, isVerifying, verifyError, onClearVerifyError, onPlanEvidence }: DiagnosticCardProps) {
   useLocale()
   const statusConfig = STATUS_CONFIG[finding.status]
 
@@ -35,9 +36,9 @@ export default function DiagnosticCard({ finding, onVerify, isVerifying, verifyE
         <span className="diagnostic-status-badge" style={{ background: statusConfig.color, color: '#fff', borderRadius: '4px', padding: '1px 6px', fontSize: '0.75rem' }}>
           {finding.degraded ? tr("Analysis incomplete") : `${statusConfig.icon} ${statusConfig.label}`}
         </span>
-        <span className="diagnostic-title">{finding.title}</span>
+        <span className="diagnostic-title">{tr(finding.title)}</span>
       </div>
-      <p className="diagnostic-message">{finding.message}</p>
+      <p className="diagnostic-message">{tr(finding.message)}</p>
       {finding.evidence.length > 0 && (
         <ul className="diagnostic-evidence">
           {finding.evidence.map((e, i) => (
@@ -46,6 +47,7 @@ export default function DiagnosticCard({ finding, onVerify, isVerifying, verifyE
         </ul>
       )}
       <div className="diagnostic-footer">
+        {finding.planNodePath && onPlanEvidence && <button className="verify-button" onClick={() => onPlanEvidence(finding.planNodePath!)}>{tr("View plan evidence")}</button>}
         {!finding.degraded && <div className="diagnostic-confidence">
           <span>{tr("Confidence:")}</span>
           <div className="confidence-bar">
@@ -55,7 +57,7 @@ export default function DiagnosticCard({ finding, onVerify, isVerifying, verifyE
         </div>}
         {finding.verificationSql && !finding.degraded && (
           <div className="diagnostic-verify">
-            <button
+            {onVerify && <button
               className="verify-button"
               onClick={() => {
                 onClearVerifyError?.(finding.id)
@@ -64,7 +66,7 @@ export default function DiagnosticCard({ finding, onVerify, isVerifying, verifyE
               disabled={isVerifying || finding.status !== 'SUSPECTED'}
             >
               {isVerifying ? tr("Verifying...") : tr("Verify")}
-            </button>
+            </button>}
             <code className="diagnostic-sql">{finding.verificationSql}</code>
             {finding.verificationResult && (
               <p className="verification-result">

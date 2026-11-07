@@ -8,14 +8,22 @@ directories:
 
 files:
   - out/**/*
+  # Renderer dependencies are bundled by Vite; main/preload use Electron/Node only.
+  - '!node_modules/**/*'
 
 beforePack: scripts/before-pack.cjs
+afterPack: scripts/after-pack.cjs
 
 extraResources:
   - from: backend/target/backend.jar
     to: backend.jar
 
 win:
+  # Chromium locales; application translations are bundled separately by Vite.
+  electronLanguages:
+    - en-US
+    - zh-CN
+    - zh-TW
   extraResources:
     - from: build/windows-runtime
       to: runtime

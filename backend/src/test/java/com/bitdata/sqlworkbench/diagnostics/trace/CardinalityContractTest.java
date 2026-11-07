@@ -75,6 +75,15 @@ class CardinalityContractTest {
         assertEquals(1,result.comparisons().size()); assertEquals("orders",result.comparisons().get(0).observations().get(0).fragmentId());
     }
     TraceStep step(String id,String count) { return new TraceStep(0,id,id,"",TraceStatus.HAS_ROWS,-1,0,null).withObservation("",count); }
+    @Test void unsupportedSerializationKeepsObservedCountsAndReportsLimitation() {
+        var root=node("root","SELECT t.id FROM t WHERE t.id BETWEEN SYMMETRIC 3 AND 1 UNION ALL SELECT t.id FROM t",null);
+        var observation=step("root","2");
+        var result=new CardinalityStructureInspector(resolver).inspect(new TraceInputValidator().validate(root),
+            List.of(observation),List.of(new KeyValue("id",1)),"mysql");
+        assertTrue(result.comparisons().isEmpty());
+        assertTrue(result.limitations().stream().anyMatch(l -> l.code().equals("MYSQL_BETWEEN_SYMMETRIC_UNSUPPORTED") && "root".equals(l.fragmentId())),result.toString());
+        assertEquals("2",observation.count());
+    }
     @Test void typedDecimalNeverPassesThroughDouble() throws Exception {
         var stmt=mock(PreparedStatement.class); var key=new KeyValue("id","9007199254740993",KeyValue.Type.DECIMAL);
         new TraceQueryBuilder().bindParameters(stmt,List.of(key));

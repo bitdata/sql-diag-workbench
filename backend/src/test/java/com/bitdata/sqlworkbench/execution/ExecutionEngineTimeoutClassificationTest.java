@@ -78,7 +78,7 @@ class ExecutionEngineTimeoutClassificationTest {
         var databaseMetadata=org.mockito.Mockito.mock(java.sql.DatabaseMetaData.class);
         when(conn.getMetaData()).thenReturn(databaseMetadata);
         when(databaseMetadata.getDatabaseProductName()).thenReturn("PostgreSQL");
-        when(databaseMetadata.getDatabaseProductVersion()).thenReturn("16");
+        when(databaseMetadata.getDatabaseProductVersion()).thenReturn("16.14");
         when(conn.createStatement()).thenReturn(stmt);
         when(strategyFactory.get("postgresql")).thenReturn(strategy);
         when(strategy.supportsReadOnly()).thenReturn(false);

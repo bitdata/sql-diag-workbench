@@ -13,7 +13,7 @@
 .build-panel {
   pointer-events: auto;
   background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border);
   border-radius: 8px;
   width: 380px;
   max-height: 60vh;
@@ -27,7 +27,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 14px 20px;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border);
 }
 
 .build-panel-header h2 {
@@ -48,7 +48,7 @@
 }
 
 .build-panel-close:hover {
-  background: var(--bg-hover);
+  background: var(--bg-surface-hover);
   color: var(--text-primary);
 }
 

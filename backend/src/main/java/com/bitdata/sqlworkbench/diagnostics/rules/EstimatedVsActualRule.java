@@ -55,7 +55,7 @@ public class EstimatedVsActualRule implements DiagnosticRule {
                 .title("Row estimate mismatch: "+actual.toPlainString()+" actual vs "+estimate.toPlainString()+" estimated")
                 .message("Observed per-loop output differs from the per-invocation estimate. This does not establish stale statistics or a cause.")
                 .evidence(List.of("Operation: "+node.operation(),"Source: "+metrics.sourcePath(),"Loops: "+metrics.loops().value()))
-                .confidence(0.8).affectedNodeId(fragment.id()).build());
+                .confidence(0.8).affectedNodeId(fragment.id()).planNodePath(metrics.sourcePath()).build());
         });
         return findings;
     }

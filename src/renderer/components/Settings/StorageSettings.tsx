@@ -37,9 +37,13 @@ export default function StorageSettings({ storage, legacyDays }: { storage: Stor
       <p role="status">{tr("Saved policy:")}{" "}{status.policy.enabled ? tr("automatic cleanup enabled") : tr("automatic cleanup disabled")} · {status.policy.retentionDays} {" "}{tr("days ·")}{" "}{status.policy.maxStorageMiB} {" "}{tr("MiB target")}</p>
       <p>{status.size.degraded ? tr("Storage size unavailable") : tr("Stored {0} · reusable {1} · DB {2} / WAL {3} / SHM {4}", mib(status.size.totalBytes), mib(status.size.reusableBytes), mib(status.size.mainBytes), mib(status.size.walBytes), mib(status.size.shmBytes))}</p>
       {status.errorReason && <p className="storage-warning" role="status">{status.errorReason}</p>}
+      <p>{tr('Temporary plan observations expired: {0}', status.expiredReceiptsDeleted ?? 0)}</p>
+      <p>{tr('Expired observations awaiting cleanup: {0}', status.expiredReceiptsPending ?? 0)}</p>
+      {status.receiptCleanupError && <p role="alert">{status.receiptCleanupError}</p>}
       <button disabled={pending || busy} onClick={() => { void storage.loadPreview() }}>{tr("Preview cleanup")}</button>
       {preview && <>
         <p>{preview.protectedSessions} {" "}{tr("protected workspaces ·")}{" "}{preview.unknownSessions} {" "}{tr("unconfirmed workspaces")}</p>
+        <p>{tr('Pinned investigation snapshots: {0}. Protected snapshots may exceed the storage target.', preview.protectedSnapshots ?? 0)}</p>
         <p>{tr("Expired candidates:")}{" "}{Object.entries(preview.expiredCounts).map(([table, count]) => `${table} ${count}`).join(' · ')}</p>
         {preview.degraded && <p role="alert" className="storage-warning">{preview.errorReason}</p>}
         {preview.unknown.length > 0 && <>

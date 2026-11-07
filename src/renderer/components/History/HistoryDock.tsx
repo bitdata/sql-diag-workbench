@@ -11,6 +11,7 @@ interface HistoryDockProps {
   onRefresh: () => void
   /** Open this SQL in a new tab (spec §6.5 / §5.2 History entry integration). */
   onOpenInNewTab?: (sql: string) => void
+  openInNewTabDisabled?: boolean
 }
 
 export default function HistoryDock({
@@ -19,6 +20,7 @@ export default function HistoryDock({
   error,
   onRefresh,
   onOpenInNewTab,
+  openInNewTabDisabled = false,
 }: HistoryDockProps) {
   useLocale()
   const [expanded, setExpanded] = useState(false)
@@ -66,6 +68,7 @@ export default function HistoryDock({
                 type="button"
                 className="history-open-tab-btn"
                 onClick={() => onOpenInNewTab(entry.sqlText)}
+                disabled={openInNewTabDisabled}
                 title={tr("Open SQL offline in a new tab; historical connection was not recorded")} aria-label={tr("Open historical SQL offline")}
               >
                 ↗

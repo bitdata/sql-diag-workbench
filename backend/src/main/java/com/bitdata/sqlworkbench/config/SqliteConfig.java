@@ -134,6 +134,17 @@ public class SqliteConfig {
             )
             """);
 
+        // Investigation evidence is independent of session lifetime. These tables
+        // deliberately have no foreign key to sessions or connections.
+        jdbc.execute("CREATE TABLE IF NOT EXISTS plan_observation_receipts (id TEXT PRIMARY KEY, execution_id TEXT NOT NULL, session_id TEXT, connection_id TEXT NOT NULL, dialect TEXT NOT NULL, sql_sha256 TEXT NOT NULL, observation_sha256 TEXT NOT NULL, payload_json TEXT NOT NULL, payload_sha256 TEXT NOT NULL, byte_size INTEGER NOT NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, finalized_snapshot_id TEXT, UNIQUE(execution_id,sql_sha256))");
+        jdbc.execute("CREATE INDEX IF NOT EXISTS idx_plan_receipts_page ON plan_observation_receipts(finalized_snapshot_id,created_at DESC,id DESC)");
+        jdbc.execute("CREATE INDEX IF NOT EXISTS idx_plan_receipts_retention ON plan_observation_receipts(julianday(created_at),id)");
+        jdbc.execute("CREATE TABLE IF NOT EXISTS investigation_snapshots (id TEXT PRIMARY KEY, version INTEGER NOT NULL, source_observation_id TEXT NOT NULL UNIQUE, session_id TEXT, created_at TEXT NOT NULL, snapshot_json TEXT NOT NULL, payload_sha256 TEXT NOT NULL, byte_size INTEGER NOT NULL)");
+        jdbc.execute("CREATE INDEX IF NOT EXISTS idx_investigation_snapshots_page ON investigation_snapshots(created_at DESC,id DESC)");
+        jdbc.execute("CREATE INDEX IF NOT EXISTS idx_investigation_snapshots_retention ON investigation_snapshots(julianday(created_at),id)");
+        jdbc.execute("CREATE TABLE IF NOT EXISTS investigation_snapshot_protection (snapshot_id TEXT PRIMARY KEY, protected_at TEXT NOT NULL)");
+        jdbc.execute("CREATE TABLE IF NOT EXISTS investigation_snapshot_requests (request_id TEXT PRIMARY KEY, request_sha256 TEXT NOT NULL, snapshot_id TEXT NOT NULL)");
+
         jdbc.execute("""
             CREATE TABLE IF NOT EXISTS history (
                 id TEXT PRIMARY KEY,
@@ -154,7 +165,7 @@ public class SqliteConfig {
             CREATE TABLE IF NOT EXISTS diagnostic_reports (
                 id TEXT PRIMARY KEY,
                 session_id TEXT NOT NULL,
-                fragment_id TEXT NOT NULL,
+                fragment_id TEXT,
                 findings_json TEXT NOT NULL,
                 created_at TEXT NOT NULL
             )
@@ -163,6 +174,34 @@ public class SqliteConfig {
         if (jdbc.queryForList("PRAGMA table_info(diagnostic_reports)").stream()
                 .noneMatch(c -> "evaluation_json".equals(c.get("name")))) {
             jdbc.execute("ALTER TABLE diagnostic_reports ADD COLUMN evaluation_json TEXT");
+        }
+
+        // Existing fragment reports survive this atomic, idempotent nullable-identity migration.
+        if (jdbc.queryForList("PRAGMA table_info(diagnostic_reports)").stream()
+                .anyMatch(c -> "fragment_id".equals(c.get("name")) && ((Number)c.get("notnull")).intValue() == 1)) {
+            jdbc.execute((org.springframework.jdbc.core.ConnectionCallback<Void>) connection -> {
+                connection.setAutoCommit(false);
+                try (var statement = connection.createStatement()) {
+                    var triggers = new java.util.LinkedHashMap<String,String>();
+                    var indexes = new java.util.ArrayList<String>();
+                    try (var rs = statement.executeQuery("SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='diagnostic_reports' AND sql IS NOT NULL")) {
+                        while (rs.next()) indexes.add(rs.getString(1));
+                    }
+                    try (var rs = statement.executeQuery("SELECT name,sql FROM sqlite_master WHERE type='trigger' AND sql LIKE '%diagnostic_reports%'")) {
+                        while (rs.next()) triggers.put(rs.getString(1),rs.getString(2));
+                    }
+                    for (var name : triggers.keySet()) statement.execute("DROP TRIGGER \"" + name.replace("\"","\"\"") + "\"");
+                    statement.execute("CREATE TABLE diagnostic_reports_m2 (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, fragment_id TEXT, findings_json TEXT NOT NULL, created_at TEXT NOT NULL, evaluation_json TEXT)");
+                    statement.execute("INSERT INTO diagnostic_reports_m2 SELECT id,session_id,fragment_id,findings_json,created_at,evaluation_json FROM diagnostic_reports");
+                    statement.execute("DROP TABLE diagnostic_reports");
+                    statement.execute("ALTER TABLE diagnostic_reports_m2 RENAME TO diagnostic_reports");
+                    for (var sql : indexes) statement.execute(sql);
+                    for (var sql : triggers.values()) statement.execute(sql);
+                    connection.commit();
+                } catch (java.sql.SQLException failure) { connection.rollback(); throw failure; }
+                finally { connection.setAutoCommit(true); }
+                return null;
+            });
         }
 
         // Spec §8.3 — audit log of editor operations that ADR-0002 classified
@@ -221,6 +260,14 @@ public class SqliteConfig {
         jdbc.execute("CREATE TABLE IF NOT EXISTS credential_migration (id INTEGER PRIMARY KEY CHECK(id=1), status TEXT NOT NULL, unresolved INTEGER NOT NULL, error_reason TEXT, source_hash TEXT)");
         jdbc.execute("INSERT OR IGNORE INTO credential_migration(id,status,unresolved) VALUES(1,'not_started',0)");
         jdbc.execute("CREATE TRIGGER IF NOT EXISTS connection_credential_delete AFTER DELETE ON connections BEGIN DELETE FROM connection_credentials WHERE connection_id=OLD.id; END");
+        jdbc.execute("CREATE TABLE IF NOT EXISTS optimization_validation_reports (id TEXT PRIMARY KEY,session_id TEXT NOT NULL,version INTEGER NOT NULL,report_json TEXT NOT NULL,created_at TEXT NOT NULL)");
+        jdbc.execute("CREATE INDEX IF NOT EXISTS idx_optimization_session ON optimization_validation_reports(session_id,created_at)");
+        jdbc.execute("CREATE INDEX IF NOT EXISTS idx_retention_optimization ON optimization_validation_reports(julianday(created_at),id)");
+        jdbc.execute("CREATE TRIGGER IF NOT EXISTS optimization_validation_session_delete AFTER DELETE ON sessions BEGIN DELETE FROM optimization_validation_reports WHERE session_id=OLD.id; END");
+        jdbc.execute("CREATE TABLE IF NOT EXISTS optimization_experiment_reports (id TEXT PRIMARY KEY,session_id TEXT NOT NULL,version INTEGER NOT NULL,report_json TEXT NOT NULL,created_at TEXT NOT NULL)");
+        jdbc.execute("CREATE INDEX IF NOT EXISTS idx_experiment_session ON optimization_experiment_reports(session_id,created_at,id)");
+        jdbc.execute("CREATE INDEX IF NOT EXISTS idx_retention_experiment ON optimization_experiment_reports(julianday(created_at),id)");
+        jdbc.execute("CREATE TRIGGER IF NOT EXISTS optimization_experiment_session_delete AFTER DELETE ON sessions BEGIN DELETE FROM optimization_experiment_reports WHERE session_id=OLD.id; END");
         log.info("SQLite schema initialized (WAL mode)");
     }
 }

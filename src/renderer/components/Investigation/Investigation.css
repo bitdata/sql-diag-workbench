@@ -1,0 +1,23 @@
+.investigation-overlay { position: fixed; inset: 0; background: var(--overlay-bg); z-index: 1000; }
+.investigation-dialog { position: fixed; z-index: 1001; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(960px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; padding: var(--space-md); color: var(--text-primary); background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 8px 32px var(--overlay-shadow); font: 13px var(--font-ui); }
+.investigation-save { width: min(540px, calc(100vw - 32px)); }
+.investigation-dialog h2 { font-size: 14px; margin: 0 0 8px; }
+.investigation-dialog p { margin: 8px 0; overflow-wrap: anywhere; }
+.investigation-dialog form > label { display: flex; flex-direction: column; gap: 4px; margin: 12px 0; }
+.investigation-dialog input:not([type=checkbox]), .investigation-dialog textarea { width: 100%; box-sizing: border-box; background: var(--bg-app); color: var(--text-primary); border: 1px solid var(--border); border-radius: var(--radius); padding: 4px 8px; font: inherit; }
+.investigation-dialog input:not([type=checkbox]) { min-height: 28px; }
+.investigation-dialog textarea { min-height: 64px; resize: vertical; }
+.investigation-dialog form > .investigation-confirm { flex-direction: row; align-items: start; }
+.investigation-actions, .investigation-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0; }
+.investigation-actions { justify-content: flex-end; }
+.investigation-dialog button, .investigation-toolbar button { min-height: 28px; padding: 4px 12px; background: var(--bg-surface-elevated); color: var(--text-primary); border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer; }
+.investigation-dialog button:disabled, .investigation-toolbar button:disabled { opacity: .55; cursor: default; }
+.investigation-dialog :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.investigation-dialog [role=alert] { color: var(--error); }
+.investigation-dialog pre { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--bg-app); padding: 8px; max-height: 300px; overflow: auto; font: 12px var(--font-mono); }
+.investigation-history-list { list-style: none; padding: 0; margin: 8px 0; }
+.investigation-history-list li { border-bottom: 1px solid var(--border); padding: 8px 0; }
+.investigation-history-list small { display: block; color: var(--text-secondary); margin: 4px 0; overflow-wrap: anywhere; }
+.investigation-status { color: var(--text-secondary); }
+.investigation-note { white-space: pre-wrap; }
+.investigation-finding { border-left: 3px solid var(--info); padding: var(--space-sm); margin: var(--space-sm) 0; }

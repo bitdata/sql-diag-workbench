@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Service
 public class ConnectionService {
@@ -51,6 +52,7 @@ public class ConnectionService {
     private final JdbcConnector connector;
     private final long testConnectTimeoutMillis;
     private final long workloadConnectTimeoutMillis;
+    private final WorkloadLeaseManager workloadLeases;
 
     /**
      * Production constructor. The {@code @Autowired} is load-bearing, not decorative: this
@@ -59,20 +61,29 @@ public class ConnectionService {
      * "No default constructor found". The whole {@code @SpringBootTest} surface depends on it.
      */
     @Autowired
-    public ConnectionService(ConnectionStore store, KeychainStore keychain, DatabaseStrategyFactory strategyFactory) {
+    public ConnectionService(ConnectionStore store, KeychainStore keychain, DatabaseStrategyFactory strategyFactory,
+                             WorkloadLeaseManager workloadLeases) {
         this(store, keychain, strategyFactory, DriverManager::getConnection,
-            TEST_CONNECT_TIMEOUT_MS, WORKLOAD_CONNECT_TIMEOUT_MS);
+            TEST_CONNECT_TIMEOUT_MS, WORKLOAD_CONNECT_TIMEOUT_MS, workloadLeases);
     }
 
     /** Test seam — see {@link JdbcConnector}. */
     ConnectionService(ConnectionStore store, KeychainStore keychain, DatabaseStrategyFactory strategyFactory,
                       JdbcConnector connector, long testConnectTimeoutMillis, long workloadConnectTimeoutMillis) {
+        this(store, keychain, strategyFactory, connector, testConnectTimeoutMillis, workloadConnectTimeoutMillis,
+            new WorkloadLeaseManager());
+    }
+
+    ConnectionService(ConnectionStore store, KeychainStore keychain, DatabaseStrategyFactory strategyFactory,
+                      JdbcConnector connector, long testConnectTimeoutMillis, long workloadConnectTimeoutMillis,
+                      WorkloadLeaseManager workloadLeases) {
         this.store = store;
         this.keychain = keychain;
         this.strategyFactory = strategyFactory;
         this.connector = connector;
         this.testConnectTimeoutMillis = testConnectTimeoutMillis;
         this.workloadConnectTimeoutMillis = workloadConnectTimeoutMillis;
+        this.workloadLeases = workloadLeases;
     }
 
     public List<ConnectionConfig> listAll() {
@@ -169,23 +180,79 @@ public class ConnectionService {
      * can't race the EXPLAIN.
      */
     public Connection openJdbcConnection(String connectionId) throws java.sql.SQLException {
-        Optional<ConnectionConfig> config = store.findById(connectionId);
-        if (config.isEmpty()) {
-            throw new java.sql.SQLException("Connection not found: " + connectionId);
+        return openJdbcConnection(connectionId, null);
+    }
+
+    /** Capture configuration once; validate its identity before reading credentials. */
+    public Connection openJdbcConnection(String connectionId, String expectedRevision) throws java.sql.SQLException {
+        return openWithTicket(connectionId, expectedRevision, workloadLeases.acquireOrdinary());
+    }
+
+    /** Opens the experiment's physical connection under a retained reference of its exclusive ticket. */
+    public Connection openJdbcConnection(String connectionId, String expectedRevision,
+                                         WorkloadLeaseManager.Ticket exclusiveTicket) throws SQLException {
+        if (exclusiveTicket == null || exclusiveTicket.kind() != WorkloadLeaseManager.Kind.EXCLUSIVE) {
+            throw new SQLException("EXCLUSIVE_WORKLOAD_TICKET_REQUIRED");
         }
-        ConnectionConfig cfg = config.get();
-        String password = keychain.retrieve(connectionId);
-        DatabaseStrategy strategy = strategyFactory.get(cfg.dialect());
-        String url;
-        if (strategy instanceof SqlServerStrategy sqlServerStrategy) {
-            url = sqlServerStrategy.getJdbcUrl(cfg.host(), cfg.port(), cfg.database(), cfg.trustServerCertificate());
-        } else {
-            url = strategy.getJdbcUrl(cfg.host(), cfg.port(), cfg.database());
+        return openWithTicket(connectionId, expectedRevision, exclusiveTicket.retain());
+    }
+
+    public WorkloadLeaseManager.Ticket acquireExclusiveWorkload() throws SQLException {
+        return workloadLeases.acquireExclusive();
+    }
+
+    private Connection openWithTicket(String connectionId, String expectedRevision,
+                                      WorkloadLeaseManager.Ticket connectionTicket) throws SQLException {
+        try {
+            Optional<ConnectionConfig> config = store.findById(connectionId);
+            if (config.isEmpty()) throw new SQLException("CONNECTION_CHANGED");
+            ConnectionConfig cfg = config.get();
+            if (expectedRevision != null && !ConnectionIdentity.revision(cfg).equals(expectedRevision))
+                throw new SQLException("CONNECTION_CHANGED");
+            String password = keychain.retrieve(connectionId);
+            DatabaseStrategy strategy = strategyFactory.get(cfg.dialect());
+            String url;
+            if (strategy instanceof SqlServerStrategy sqlServerStrategy) {
+                url = sqlServerStrategy.getJdbcUrl(cfg.host(), cfg.port(), cfg.database(), cfg.trustServerCertificate());
+            } else {
+                url = strategy.getJdbcUrl(cfg.host(), cfg.port(), cfg.database());
+            }
+            Connection connected = connectWithOwnership(url, cfg.username(), password, workloadConnectTimeoutMillis, connectionTicket);
+            return workloadLeases.track(connected, connectionTicket);
+        } catch (SQLException | RuntimeException failure) {
+            connectionTicket.release();
+            throw failure;
         }
-        // Application-owned deadline (spec §4.1): a slow or unroutable host must not park the
-        // EXPLAIN / verification / row-trace threads on the platform TCP bound.
-        return ConnectWatchdog.callWithDeadline(
-            () -> connector.connect(url, cfg.username(), password), workloadConnectTimeoutMillis);
+    }
+
+    private Connection connectWithOwnership(String url, String username, String password, long timeoutMillis,
+                                            WorkloadLeaseManager.Ticket connectionTicket) throws SQLException {
+        WorkloadLeaseManager.Ticket handshakeTicket = connectionTicket.retain();
+        AtomicBoolean ownershipTransferred = new AtomicBoolean();
+        try {
+            Connection connected = ConnectWatchdog.callWithDeadline(
+                () -> connector.connect(url, username, password), timeoutMillis,
+                late -> closeLateConnection(late, handshakeTicket),
+                handshakeTicket::release,
+                () -> ownershipTransferred.set(true));
+            handshakeTicket.release();
+            return connected;
+        } catch (SQLException | RuntimeException failure) {
+            if (!ownershipTransferred.get()) handshakeTicket.release();
+            throw failure;
+        }
+    }
+
+    private void closeLateConnection(Connection late, WorkloadLeaseManager.Ticket ticket) {
+        try {
+            late.close();
+        } catch (SQLException | RuntimeException closeFailure) {
+            ticket.markUnconfirmed("CONNECTION_CLEANUP_UNCONFIRMED");
+            workloadLeases.retryClose(late, ticket);
+            log.warn("Late JDBC connection cleanup is unconfirmed: {}", closeFailure.getMessage(), closeFailure);
+            return;
+        }
+        ticket.release();
     }
 
     public Map<String, Object> test(ConnectionRequest request) {
@@ -215,15 +282,24 @@ public class ConnectionService {
         // `connect-timeout` classification describes the handshake ONLY (spec §5.1), and the
         // deadline message is ours rather than the driver's localized text.
         Connection conn;
+        WorkloadLeaseManager.Ticket connectionTicket;
         try {
-            conn = ConnectWatchdog.callWithDeadline(
-                () -> connector.connect(url, request.username(), passwordForTest), testConnectTimeoutMillis);
+            connectionTicket = workloadLeases.acquireOrdinary();
+        } catch (SQLException busy) {
+            return Map.of("success", false, "latency", System.currentTimeMillis() - start,
+                "error", errorText(busy), "errorReason", busy instanceof WorkloadBusyException ? "WORKLOAD_BUSY" : "CONNECTION_ADMISSION_FAILED", "degraded", true);
+        }
+        try {
+            conn = connectWithOwnership(url, request.username(), passwordForTest, testConnectTimeoutMillis, connectionTicket);
+            conn = workloadLeases.track(conn, connectionTicket);
         } catch (ConnectTimeoutException e) {
+            connectionTicket.release();
             long latency = System.currentTimeMillis() - start;
             log.warn("Connection test handshake timed out: {} ({}ms)", url, latency);
             return Map.of("success", false, "latency", latency,
                 "error", errorText(e), "errorReason", "connect-timeout");
         } catch (Exception e) {
+            connectionTicket.release();
             long latency = System.currentTimeMillis() - start;
             log.warn("Connection test failed: {} - {}", url, e.getMessage());
             return Map.of("success", false, "latency", latency,

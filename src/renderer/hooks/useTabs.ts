@@ -83,11 +83,8 @@ export interface UseTabsApi {
   refreshProtection?: () => Promise<void>
   tabs: Tab[]
   activeSessionId: string | null
-  /**
-   * True while the first-tab POST (boot) is in flight OR has not yet
-   * resolved. Per spec §6.1: boot state is observable from mount, so
-   * downstream consumers can disable typing immediately.
-   */
+  hydratingTabs: boolean
+  /** True while the first tab is being created or saved tabs are restoring. */
   booting: boolean
   /**
    * Error message from a failed createTab (boot POST). null when no
@@ -195,20 +192,32 @@ export function useTabs(
     modeBySession: {},
   })
   const [tabs, setTabs] = useState<Tab[]>([])
+  const [hydratingTabs, setHydratingTabs] = useState(persisted.tabSessionIds.length > 0)
   const tabsRef = useRef(tabs)
   tabsRef.current = tabs
   const persistedRef = useRef(persisted)
   persistedRef.current = persisted
   const metadataPending = useRef(0)
   const saveAbortRef = useRef<Map<string, AbortController>>(new Map())
-  // PR-2 (boot race): expose observable boot state so consumers can disable
-  // typing during the first-tab POST and surface a banner on failure.
-  // `booting` starts true per spec §6.1 — the boot-tab POST is the first
-  // createTab call, observable from mount.
+  // Expose boot state so consumers can disable workspace actions while the
+  // first tab is created or saved tabs are restored, and surface failures.
+  // `booting` starts true per spec §6.1.
   const [booting, setBooting] = useState<boolean>(true)
   const [bootError, setBootError] = useState<string | null>(null)
   const [bootErrorLabel, setBootErrorLabel] = useState('Could not create the first tab')
   const tabRequestBusy = useRef(false)
+  const tabHydrationPending = useRef(persisted.tabSessionIds.length > 0)
+  const tabHydrationWaiters = useRef(new Set<(ready: boolean) => void>())
+  const finishTabHydration = useCallback((ready: boolean) => {
+    tabHydrationPending.current = false
+    if (ready) setHydratingTabs(false)
+    for (const resolve of tabHydrationWaiters.current) resolve(ready)
+    tabHydrationWaiters.current.clear()
+  }, [])
+  const waitForTabHydration = useCallback(() => {
+    if (!tabHydrationPending.current) return Promise.resolve(true)
+    return new Promise<boolean>(resolve => { tabHydrationWaiters.current.add(resolve) })
+  }, [])
   const recoveryRef = useRef<{ intent: TabCreationIntent; label: string } | null>(null)
   const [bootErrorRetryable, setBootErrorRetryable] = useState(true)
   const closedSessions = useRef(new Set<string>())
@@ -258,7 +267,13 @@ export function useTabs(
   // still exists; drop ones that 404.
   useEffect(() => {
     if (!backendUrl || !protectionReady) return
-    if (persisted.tabSessionIds.length === 0) return
+    if (persisted.tabSessionIds.length === 0) {
+      finishTabHydration(true)
+      return
+    }
+    tabHydrationPending.current = true
+    setHydratingTabs(true)
+    setBooting(true)
     let cancelled = false
     ;(async () => {
       const hydrated: Tab[] = []
@@ -311,26 +326,31 @@ export function useTabs(
         }
       }
       if (!cancelled) {
-        setTabs(hydrated)
-        setPersisted((p) => ({
+        const nextPersisted: TabsPersisted = {
           tabSessionIds: hydrated.map((t) => t.sessionId),
           activeSessionId:
             persisted.activeSessionId && hydrated.find((t) => t.sessionId === persisted.activeSessionId)
               ? persisted.activeSessionId
               : (hydrated[0]?.sessionId ?? null),
-          modeBySession: p.modeBySession ?? {},
-        }))
+          modeBySession: persisted.modeBySession ?? {},
+        }
+        tabsRef.current = hydrated
+        persistedRef.current = nextPersisted
+        setTabs(hydrated)
+        setPersisted(nextPersisted)
         // PR-2 (boot race): hydration succeeded — boot path complete. Clear
         // `booting` so consumers (BootErrorBanner, viewerReadOnly) don't
         // sit at "loading" forever when localStorage had existing tabs.
         setBooting(false)
+        finishTabHydration(true)
       }
     })()
     return () => {
       cancelled = true
+      if (tabHydrationPending.current) finishTabHydration(false)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [backendUrl, protectionReady])
+  }, [backendUrl, protectionReady, finishTabHydration])
 
   const switchTab = useCallback((sessionId: string) => {
     if (isWorkspaceExitLocked()) return
@@ -361,6 +381,12 @@ export function useTabs(
     metadataRecovery.current = null
     if (!backendUrl) {
       reportError(BACKEND_URL_UNAVAILABLE)
+      return null
+    }
+    if (tabHydrationPending.current && !await waitForTabHydration()) return null
+    if (!mounted.current) return null
+    if (tabRequestBusy.current) {
+      reportError('Another tab request is still running. Wait for it to finish and retry.')
       return null
     }
     tabRequestBusy.current = true
@@ -423,9 +449,20 @@ export function useTabs(
       tabRequestBusy.current = false
       if (mounted.current) setBooting(false)
     }
-  }, [backendUrl, setPersisted, options.requireProtection, protectionReady])
+  }, [backendUrl, setPersisted, options.requireProtection, protectionReady, waitForTabHydration])
 
   const createTab = useCallback(async () => {
+    if (options.requireProtection && !protectionReady) return
+    if (isWorkspaceExitLocked()) return
+    if (!backendUrl) {
+      const current = tabsRef.current.find(t => t.sessionId === persistedRef.current.activeSessionId)?.workspace
+      const intent = createTabIntent('', { name: `Untitled ${tabsRef.current.length + 1}`, dialect: current?.dialect ?? options.dialect,
+        connectionId: current ? current.connectionId : options.connectionId })
+      await submitCreation(intent, tabsRef.current.length ? 'Could not create a new tab' : 'Could not create the first tab')
+      return
+    }
+    if (tabHydrationPending.current && !await waitForTabHydration()) return
+    if (!mounted.current) return
     if (options.requireProtection && !protectionReady) return
     if (isWorkspaceExitLocked()) return
     if (tabRequestBusy.current) return
@@ -433,7 +470,7 @@ export function useTabs(
     const intent = createTabIntent('', { name: `Untitled ${tabsRef.current.length + 1}`, dialect: current?.dialect ?? options.dialect,
       connectionId: current ? current.connectionId : options.connectionId })
     await submitCreation(intent, tabsRef.current.length ? 'Could not create a new tab' : 'Could not create the first tab')
-  }, [options.dialect, options.connectionId, options.requireProtection, protectionReady, submitCreation])
+  }, [backendUrl, options.dialect, options.connectionId, options.requireProtection, protectionReady, submitCreation, waitForTabHydration])
 
   const openInNewTab = useCallback(async (sql: string, opts: OpenTabOptions = {}): Promise<string | null> => {
     if (isWorkspaceExitLocked() && !opts.exitContinuation) {
@@ -672,6 +709,7 @@ export function useTabs(
     refreshProtection,
     tabs,
     activeSessionId: persisted.activeSessionId,
+    hydratingTabs,
     booting,
     bootError: protectionError ?? bootError,
     retryBoot,

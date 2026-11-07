@@ -11,6 +11,15 @@ import static org.mockito.Mockito.*;
 
 class ComplexSourcePlanServiceTest {
     private final SqlDialectResolver resolver=new SqlDialectResolver(DatabaseStrategyFactory.withBuiltinStrategies());
+    @Test void symmetricMetadataFailureRetainsItsReasonWithoutOpeningJdbc() throws Exception {
+        var connections=mock(ConnectionService.class);var config=mock(ConnectionConfig.class);
+        when(config.dialect()).thenReturn("mysql");when(connections.getById("c1")).thenReturn(Optional.of(config));
+        var service=new ComplexSourcePlanService(connections,DatabaseStrategyFactory.withBuiltinStrategies(),resolver,new SelectOnlyGuard(resolver));
+        var result=service.inspect(new PhysicalSourcePlanService.Request("c1","SELECT id FROM t WHERE id BETWEEN SYMMETRIC 3 AND 1",List.of(new KeyValue("id",1))));
+        assertEquals("UNKNOWN",result.status());assertFalse(result.verified());
+        assertEquals("MYSQL_BETWEEN_SYMMETRIC_UNSUPPORTED",result.errorReason());
+        verify(connections,never()).openJdbcConnection(anyString());
+    }
     @Test void mutationAndInvalidKeysAreRejectedBeforeOpeningTheDatabase() throws Exception {
         var connections=mock(ConnectionService.class);var config=mock(ConnectionConfig.class);
         when(config.dialect()).thenReturn("mysql");when(connections.getById("c1")).thenReturn(Optional.of(config));

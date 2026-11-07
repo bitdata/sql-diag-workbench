@@ -151,7 +151,7 @@ export function useEditorActions({
   }, [setCurrentSql])
 
   const handleNewSession = useCallback(() => {
-    if (isWorkspaceExitLocked()) return
+    if (isWorkspaceExitLocked() || tabsApi.booting) return
     void tabsApi.createTab()
   }, [tabsApi])
 

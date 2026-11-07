@@ -18,7 +18,7 @@ import java.util.regex.Pattern;
 @Component
 public class SequentialScanRule implements DiagnosticRule {
 
-    private static final Pattern SEQ_SCAN_PATTERN = Pattern.compile("Seq Scan", Pattern.CASE_INSENSITIVE);
+    private static final Pattern SEQ_SCAN_PATTERN = Pattern.compile("^(?:Seq Scan\\b|Table scan on\\s)", Pattern.CASE_INSENSITIVE);
     private static final Pattern TABLE_NAME_PATTERN =
         Pattern.compile("Seq Scan on (\\S+)", Pattern.CASE_INSENSITIVE);
     private static final long LARGE_TABLE_THRESHOLD = 100_000L;
@@ -56,7 +56,7 @@ public class SequentialScanRule implements DiagnosticRule {
                 .message("The plan uses a sequential scan. Output rows are not table size; this observation alone does not establish that an index would improve performance.")
                 .evidence(List.of("Operation: "+node.operation(),"Estimated output rows: "+metricText(metrics.estimatedRows()),
                     "Actual output rows (per loop): "+metricText(metrics.actualRows())))
-                .confidence(0.7).affectedNodeId(fragment.id()).build());
+                .confidence(0.7).affectedNodeId(fragment.id()).planNodePath(metrics.sourcePath()).build());
         }
         return findings;
     }
@@ -114,7 +114,7 @@ public class SequentialScanRule implements DiagnosticRule {
         return node.tableName() != null && !node.tableName().isBlank();
     }
 
-    private boolean isSeqScan(String operation) {
+    public static boolean isSeqScan(String operation) {
         return operation != null && SEQ_SCAN_PATTERN.matcher(operation).find();
     }
 
