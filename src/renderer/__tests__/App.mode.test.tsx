@@ -34,6 +34,8 @@ function makeMemoryStorage(): Storage {
 }
 
 const SESSION = {
+  identityPolicy: 'structural-p0p1-v2',
+  workspaceRevision: 0,
   id: 'sess-1',
   name: 'Test tab',
   connectionId: 'conn-1',

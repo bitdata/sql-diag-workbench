@@ -30,6 +30,11 @@ function buildDiagnosticsHook(overrides: Partial<DiagnosticsHook> = {}): Diagnos
 }
 
 describe('ResultsPanel', () => {
+  it('does not request uncertified SQL Server operator mapping', async () => {
+    renderWithProviders(<ResultsPanel result={mockPlanResult} loading={false} error={null} mode="performance"
+      backendUrl="http://backend" provenance={{ sql: 'SELECT 1', connectionId: 'native', dialect: 'sqlserver', connectionName: 'native', source: 'input' }} />)
+    await waitFor(() => expect(globalThis.fetch).not.toHaveBeenCalledWith(expect.stringContaining('/plan-mapping'), expect.anything()))
+  })
   const originalFetch = globalThis.fetch
   beforeEach(() => {
     globalThis.fetch = vi.fn(() => Promise.resolve(new Response(JSON.stringify({
@@ -268,6 +273,8 @@ describe('ResultsPanel', () => {
     await waitFor(() => expect(requests).toHaveLength(1))
     fireEvent.click(container.querySelector('.plan-row')!)
     rerender(panel('session-current'))
+    expect(container.querySelector('.plan-node-details')).toBeNull()
+    fireEvent.click(container.querySelector('.plan-row')!)
     await waitFor(() => expect(requests).toHaveLength(2))
     await act(async () => { requests[1].resolve(response('current-scope-target')) })
     await waitFor(() => expect(container.querySelector('.plan-mapping')).toHaveTextContent('current-scope-target'))

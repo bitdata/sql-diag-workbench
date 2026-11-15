@@ -121,6 +121,7 @@ public class ConnectionService {
 
     @org.springframework.transaction.annotation.Transactional
     public Optional<ConnectionConfig> update(String id, ConnectionRequest request) {
+        store.reserveWrite();
         Optional<ConnectionConfig> existing = store.findById(id);
         if (existing.isEmpty()) {
             log.warn("Update failed: connection not found (id={})", id);
@@ -155,6 +156,7 @@ public class ConnectionService {
 
     @org.springframework.transaction.annotation.Transactional
     public boolean delete(String id) {
+        store.reserveWrite();
         Optional<ConnectionConfig> config = store.findById(id);
         if (config.isPresent()) {
             keychain.delete(id);
@@ -187,6 +189,33 @@ public class ConnectionService {
     public Connection openJdbcConnection(String connectionId, String expectedRevision) throws java.sql.SQLException {
         return openWithTicket(connectionId, expectedRevision, workloadLeases.acquireOrdinary());
     }
+    /** Source preparation retains the same ordinary lease with its shorter whole-operation deadline. */
+    public Connection openJdbcConnectionWithTimeout(String connectionId,String expectedRevision,long timeoutMillis)throws SQLException {
+        var ticket=workloadLeases.acquireOrdinary();
+        long timeout=Math.min(workloadConnectTimeoutMillis,Math.max(1,timeoutMillis));
+        long deadline=System.nanoTime()+java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(timeout);
+        try {
+            return ConnectWatchdog.callWithDeadline(()->openWithTicket(connectionId,expectedRevision,ticket,timeout,deadline),
+                timeout,late->closeLateConnection(late,ticket));
+        } catch(SQLException failure) {
+            if(failure.getCause() instanceof CredentialFailure credential)throw credential;
+            throw failure;
+        }
+    }
+
+    /** Consumes a caller's retained task reference, preserving both watchdogs. */
+    public Connection openOrdinaryWithTimeout(String id,String revision,long timeoutMillis,WorkloadLeaseManager.Ticket ticket)throws SQLException {
+        if(ticket==null||ticket.kind()!=WorkloadLeaseManager.Kind.ORDINARY)throw new SQLException("ORDINARY_WORKLOAD_TICKET_REQUIRED");
+        long timeout=Math.min(workloadConnectTimeoutMillis,Math.max(1,timeoutMillis));
+        long deadline=System.nanoTime()+java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(timeout);
+        try {
+            return ConnectWatchdog.callWithDeadline(()->openWithTicket(id,revision,ticket,timeout,deadline),
+                timeout,late->closeLateConnection(late,ticket));
+        } catch(SQLException failure) {
+            if(failure.getCause() instanceof CredentialFailure credential)throw credential;
+            throw failure;
+        }
+    }
 
     /** Opens the experiment's physical connection under a retained reference of its exclusive ticket. */
     public Connection openJdbcConnection(String connectionId, String expectedRevision,
@@ -201,8 +230,26 @@ public class ConnectionService {
         return workloadLeases.acquireExclusive();
     }
 
+    /** Consumes one retained ordinary reference, including failure cleanup. */
+    public Connection openOrdinaryConnection(String id,String revision,WorkloadLeaseManager.Ticket ticket)throws SQLException {
+        if(ticket==null||ticket.kind()!=WorkloadLeaseManager.Kind.ORDINARY)throw new SQLException("ORDINARY_WORKLOAD_TICKET_REQUIRED");
+        return openWithTicket(id,revision,ticket);
+    }
+    /** Pins a worker plus asynchronous cancellation work until each reference is finished. */
+    public WorkloadLeaseManager.Ticket acquireOrdinaryWorkload() throws SQLException {
+        return workloadLeases.acquireOrdinary();
+    }
+
     private Connection openWithTicket(String connectionId, String expectedRevision,
                                       WorkloadLeaseManager.Ticket connectionTicket) throws SQLException {
+        return openWithTicket(connectionId,expectedRevision,connectionTicket,workloadConnectTimeoutMillis);
+    }
+    private Connection openWithTicket(String connectionId,String expectedRevision,
+                                      WorkloadLeaseManager.Ticket connectionTicket,long timeoutMillis)throws SQLException {
+        return openWithTicket(connectionId,expectedRevision,connectionTicket,timeoutMillis,Long.MAX_VALUE);
+    }
+    private Connection openWithTicket(String connectionId,String expectedRevision,
+                                      WorkloadLeaseManager.Ticket connectionTicket,long timeoutMillis,long deadline)throws SQLException {
         try {
             Optional<ConnectionConfig> config = store.findById(connectionId);
             if (config.isEmpty()) throw new SQLException("CONNECTION_CHANGED");
@@ -210,6 +257,11 @@ public class ConnectionService {
             if (expectedRevision != null && !ConnectionIdentity.revision(cfg).equals(expectedRevision))
                 throw new SQLException("CONNECTION_CHANGED");
             String password = keychain.retrieve(connectionId);
+            if(deadline!=Long.MAX_VALUE) {
+                long remaining=java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(deadline-System.nanoTime());
+                if(remaining<=0)throw new ConnectTimeoutException("Diagnostic connection preparation deadline exceeded");
+                timeoutMillis=Math.min(timeoutMillis,remaining);
+            }
             DatabaseStrategy strategy = strategyFactory.get(cfg.dialect());
             String url;
             if (strategy instanceof SqlServerStrategy sqlServerStrategy) {
@@ -217,7 +269,7 @@ public class ConnectionService {
             } else {
                 url = strategy.getJdbcUrl(cfg.host(), cfg.port(), cfg.database());
             }
-            Connection connected = connectWithOwnership(url, cfg.username(), password, workloadConnectTimeoutMillis, connectionTicket);
+            Connection connected = connectWithOwnership(url, cfg.username(), password, timeoutMillis, connectionTicket);
             return workloadLeases.track(connected, connectionTicket);
         } catch (SQLException | RuntimeException failure) {
             connectionTicket.release();

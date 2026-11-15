@@ -13,10 +13,19 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class CardinalityContractTest {
+    final com.bitdata.sqlworkbench.connection.WorkloadLeaseManager taskLeases=new com.bitdata.sqlworkbench.connection.WorkloadLeaseManager();
+    @org.junit.jupiter.api.AfterEach void closeTaskLeaseFixture(){taskLeases.close();}
+
     TraceStore store; RowTraceEngine engine; ConnectionService service;
     SqlDialectResolver resolver=com.bitdata.sqlworkbench.sql.decompose.RuleTestDeps.testResolver();
     @BeforeEach void setup() throws Exception {
         store=new TraceStore(); service=mock(ConnectionService.class);
+        lenient().when(service.acquireOrdinaryWorkload()).thenAnswer(i->taskLeases.acquireOrdinary());
+        lenient().when(service.openOrdinaryWithTimeout(anyString(),nullable(String.class),anyLong(),any(com.bitdata.sqlworkbench.connection.WorkloadLeaseManager.Ticket.class))).thenAnswer(i->{
+            var owner=(com.bitdata.sqlworkbench.connection.WorkloadLeaseManager.Ticket)i.getArgument(3);
+            try{return taskLeases.track(service.openJdbcConnection(i.getArgument(0)),owner);}catch(Exception failed){owner.release();throw failed;}
+        });
+
         when(service.getById("c")).thenReturn(Optional.of(new ConnectionConfig("c","test","",0,"","","postgresql","",false,"","",null,false)));
         when(service.openJdbcConnection("c")).thenAnswer(i -> DriverManager.getConnection("jdbc:sqlite::memory:"));
         var factory=mock(DatabaseStrategyFactory.class); var strategy=new PostgreSqlStrategy(); when(factory.get("postgresql")).thenReturn(strategy);
@@ -158,6 +167,8 @@ class CardinalityContractTest {
             assertEquals("PENDING",frozen.cancelSignal().state()); assertEquals("UNKNOWN",frozen.quantity().verdict());
             store.addStep(id,step("late","3")); assertFalse(store.completeQuantity(id,List.of(),List.of()));
             release.countDown(); assertTrue(cancelled.get(2,TimeUnit.SECONDS));
+            long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(2);
+            while("PENDING".equals(store.toProgress(id).cancelSignal().state())&&System.nanoTime()<deadline) Thread.sleep(5);
             assertEquals(frozen.steps(),store.toProgress(id).steps()); assertEquals("FAILED",store.toProgress(id).cancelSignal().state());
         } finally { release.countDown();pool.shutdownNow(); }
     }

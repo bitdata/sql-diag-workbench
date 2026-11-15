@@ -54,6 +54,7 @@ function makeMemoryStorage(): Storage {
 }
 
 const SESSION = {
+  identityPolicy: 'structural-p0p1-v2', workspaceRevision: 0,
   id: 'sess-1',
   name: 'Test tab',
   connectionId: 'conn-1',
@@ -234,49 +235,17 @@ describe('App fragment-edit notice — degraded source (spec §5)', () => {
     bootMocks()
   })
 
-  it(
-    'EDIT from a degraded source states the degraded identity and its reason',
-    { timeout: 15000 },
-    async () => {
-      server.use(
-        // Boot parse returns the degraded root — the tree the edit is submitted
-        // against, so `submitUserEdit` looks the marker up on `node-root`.
-        http.post('*/api/sql/parse', () =>
-          HttpResponse.json({ tree: degradedTree(), options: [], errors: [] }),
-        ),
-        http.post('*/api/fragment/create-user-edit', () =>
-          HttpResponse.json({
-            node: {
-              id: 'edited-1', type: 'USER_EDITED', label: 'edited', sqlFragment: 'SELECT 2',
-              executable: true, executionHint: null, nodeCount: 0, ruleName: null,
-              children: [], editParentId: 'node-root',
-            },
-            classification: 'EDIT',
-            navigatedToExisting: false,
-          }),
-        ),
-      )
-
-      await renderBootedApp()
-      await editRootFragmentAndSave('SELECT 2')
-
-      const banner = bannerFor(
-        await screen.findByText(/carries a degraded identity/, {}, { timeout: 4000 }),
-      )
-      expect(banner).toHaveTextContent('Edited SQL opened in a new tab')
-      expect(banner).toHaveTextContent('the edit was saved as a new fragment and opened in a new tab.')
-      expect(banner).toHaveTextContent('Reason: unsupported node types: SqlExplain')
-      // Stated degradation, not an error: acknowledge, never retry.
-      expect(within(banner).getByRole('button', { name: 'Dismiss' })).toBeInTheDocument()
-      expect(within(banner).queryByRole('button', { name: 'Retry' })).toBeNull()
-
-      // Spec §7 ⑨ — Dismiss clears the notice.
-      fireEvent.click(within(banner).getByRole('button', { name: 'Dismiss' }))
-      expect(screen.queryByText(/carries a degraded identity/)).toBeNull()
-      expect(screen.queryByRole('alert')).toBeNull()
-      expect(screen.queryAllByRole('status').find(el => el.classList.contains('boot-error-banner')) ?? null).toBeNull()
-    },
-  )
+  it.each(['unsupported node types: SqlExplain', ''])('degraded current-policy source %s cannot submit an edit or open a tab', async marker => {
+    const submit=vi.fn()
+    server.use(http.post('*/api/sql/parse', () => HttpResponse.json({ tree:{...buildMockTree(),canonicalizationError:marker},options:[],errors:[] })),
+      http.post('*/api/fragment/create-user-edit', () => { submit(); return HttpResponse.json({classification:'EDIT'}) }))
+    await renderBootedApp()
+    await editRootFragmentAndSave('SELECT 2')
+    const banner=bannerFor(await screen.findByText(/A graph node has no verified identity\./, {selector:'.boot-error-banner__message'}))
+    expect(banner).toHaveTextContent('Could not confirm the edit result')
+    expect(submit).not.toHaveBeenCalled()
+    expect(within(screen.getByRole('tablist',{name:'Open sessions'})).getAllByRole('tab')).toHaveLength(1)
+  })
 
   it(
     'EDIT from a clean source opens the tab and raises no notice at all',
@@ -321,7 +290,7 @@ describe('App fragment-edit notice — degraded source (spec §5)', () => {
     async () => {
       server.use(
         http.post('*/api/sql/parse', () =>
-          HttpResponse.json({ tree: degradedTree(), options: [], errors: [] }),
+          HttpResponse.json({ tree: buildMockTree(), options: [], errors: [] }),
         ),
         http.post('*/api/fragment/create-user-edit', () =>
           HttpResponse.json({
@@ -351,42 +320,7 @@ describe('App fragment-edit notice — degraded source (spec §5)', () => {
     },
   )
 
-  it(
-    'blank source marker still states the degradation, with no empty Reason tail',
-    { timeout: 15000 },
-    async () => {
-      server.use(
-        http.post('*/api/sql/parse', () =>
-          HttpResponse.json({
-            tree: { ...buildMockTree(), canonicalizationError: '' },
-            options: [],
-            errors: [],
-          }),
-        ),
-        http.post('*/api/fragment/create-user-edit', () =>
-          HttpResponse.json({
-            node: {
-              id: 'edited-1', type: 'USER_EDITED', label: 'edited', sqlFragment: 'SELECT 2',
-              executable: true, executionHint: null, nodeCount: 0, ruleName: null,
-              children: [], editParentId: 'node-root',
-            },
-            classification: 'EDIT',
-            navigatedToExisting: false,
-          }),
-        ),
-      )
 
-      await renderBootedApp()
-      await editRootFragmentAndSave('SELECT 2')
-
-      const banner = bannerFor(
-        await screen.findByText(/carries a degraded identity/, {}, { timeout: 4000 }),
-      )
-      expect(banner).toHaveTextContent('Edited SQL opened in a new tab')
-      // No reason text ⇒ no "Reason:" tail at all (spec §6).
-      expect(banner).not.toHaveTextContent('Reason:')
-    },
-  )
 })
 
 describe('App edit recovery', () => {

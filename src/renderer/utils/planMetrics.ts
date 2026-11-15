@@ -1,6 +1,6 @@
 import { tr } from '../i18n'
 import type { Metric, NodeMetrics, Evaluation } from '../types/execution'
-export function metricText(metric?: Metric | null): string {
+export function metricText(metric?: Pick<Metric, 'state' | 'value'> | null): string {
   if (!metric || metric.state === 'UNKNOWN') return tr("Unknown")
   if (metric.state === 'NOT_EXECUTED') return tr("Not executed")
   if (metric.state === 'NOT_COLLECTED') return tr("Not collected")

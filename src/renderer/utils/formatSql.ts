@@ -13,19 +13,13 @@ const DEFAULT_FORMAT_OPTIONS: FormatOptions = {
   keywordCase: 'upper',
 }
 
-/**
- * Format SQL using sql-formatter. For large SQL (>=10KB), caller should
- * invoke in a Web Worker to avoid blocking the UI thread.
- */
-export function formatSql(sql: string, options: FormatOptions = DEFAULT_FORMAT_OPTIONS): string {
+export interface FormatOutcome { sql: string; formatted: boolean; degraded: boolean; errorReason: string | null }
+
+/** Unsupported or failed formatting retains the original bytes and exposes a reason. */
+export function formatSql(sql: string, options: FormatOptions = DEFAULT_FORMAT_OPTIONS, formatter: typeof format = format): FormatOutcome {
+  if (options.dialect === 'oracle') return { sql, formatted: false, degraded: true, errorReason: 'ORACLE_FORMAT_UNSUPPORTED' }
   try {
-    return format(sql, {
-      language: options.dialect === 'mysql' ? 'mysql' : 'postgresql',
-      tabWidth: options.tabWidth ?? 2,
-      keywordCase: options.keywordCase ?? 'upper',
-      linesBetweenQueries: 2,
-    })
-  } catch {
-    return sql
-  }
+    return { sql: formatter(sql, { language: options.dialect === 'mysql' ? 'mysql' : 'postgresql', tabWidth: options.tabWidth ?? 2,
+      keywordCase: options.keywordCase ?? 'upper', linesBetweenQueries: 2 }), formatted: true, degraded: false, errorReason: null }
+  } catch { return { sql, formatted: false, degraded: true, errorReason: 'SQL_FORMAT_FAILED' } }
 }

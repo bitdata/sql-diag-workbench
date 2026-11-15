@@ -1,3 +1,4 @@
+import { DesktopQuitGate } from '../DesktopQuitGate'
 import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
 import { join, resolve } from 'path'
 import { mkdirSync } from 'fs'
@@ -26,6 +27,20 @@ ipcMain.handle('get-backend-url', () => ({
   token: backendLauncher.getToken(),
 }))
 ipcMain.handle('get-backend-status', () => backendLauncher.getHealthStatus())
+const drainRequest = async (method: 'POST' | 'GET', signal: AbortSignal) => {
+  const response = await fetch('http://127.0.0.1:' + backendLauncher.getPort() + '/api/execution/drain',
+    { method, signal, headers: { 'X-Auth-Token': backendLauncher.getToken() } })
+  if (!response.ok) throw new Error('SHUTDOWN_STATUS_UNAVAILABLE')
+  return response.json() as Promise<unknown>
+}
+const quitGate = new DesktopQuitGate({
+  prepareStop: () => backendLauncher.prepareStop(),
+  begin: async signal => { await drainRequest('POST', signal) },
+  read: signal => drainRequest('GET', signal),
+  requestStop: () => backendLauncher.stop(),
+  processExitConfirmed: () => backendLauncher.processExitConfirmed(),
+  releaseQuit: observation => { console.warn('Backend quit observation:', JSON.stringify(observation)); app.quit() },
+})
 const exit = new ExitCoordinator({
   request: attemptId => {
     if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isCrashed()) throw new Error('Workspace window unavailable')
@@ -42,7 +57,7 @@ const exit = new ExitCoordinator({
     }).then(({ response }) => exit.decision(attemptId, response === 1 ? 'retry' : response === 2 ? 'discard' : 'cancel'))
       .catch(() => exit.decision(attemptId, 'cancel'))
   },
-  quit: () => app.quit(),
+  quit: () => { void quitGate.commit() },
 })
 ipcMain.on('workspace-exit-result', (event, result: unknown) => {
   if (event.sender === mainWindow?.webContents) exit.result(result)
@@ -117,9 +132,10 @@ function createWindow(): void {
     mainWindow?.show()
   })
   mainWindow.on('close', event => {
-    if (exit.committed) return
+    if (quitGate.allowNativeQuit) return
     event.preventDefault()
-    exit.request()
+    if (exit.committed) void quitGate.commit()
+    else exit.request()
   })
   mainWindow.webContents.on('render-process-gone', () => exit.unavailable())
   mainWindow.on('unresponsive', () => exit.unavailable())
@@ -160,6 +176,7 @@ app.whenReady().then(async () => {
 
   // Close splash once backend is running
   closeSplashWindow()
+  if (exit.committed || quitGate.allowNativeQuit) return
   createWindow()
 
   app.on('activate', () => {
@@ -171,13 +188,14 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
-    app.quit()
+    void quitGate.commit()
   }
 })
 
 app.on('before-quit', event => {
-  if (exit.committed || !mainWindow) return
+  if (quitGate.allowNativeQuit) return
   event.preventDefault()
-  exit.request()
+  if (exit.committed || !mainWindow || mainWindow.isDestroyed()) void quitGate.commit()
+  else exit.request()
 })
 app.on('will-quit', () => backendLauncher?.stop())

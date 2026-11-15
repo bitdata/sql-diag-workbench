@@ -8,7 +8,7 @@ import java.util.Objects;
 
 /**
  * ADR-0001 — Fragment identity computation.
- * Identity = SHA-256(canonicalSql + "|" + dialect), producing a 64-char hex string.
+ * Identity = SHA-256(JSON tuple [policy, dialect, canonicalSql]), producing 64 hex chars.
  */
 public final class FragmentIdentity {
 
@@ -27,6 +27,19 @@ public final class FragmentIdentity {
     public static String computeId(String canonicalSql, String dialect) {
         Objects.requireNonNull(canonicalSql, "canonicalSql");
         Objects.requireNonNull(dialect, "dialect");
-        return sha256Hex(canonicalSql + "|" + dialect);
+        return computeId(canonicalSql,dialect,com.bitdata.sqlworkbench.sql.diff.StructuralSqlCodec.POLICY);
+    }
+
+    /** Versioned identity. The two-argument overload also uses the current policy; stored historical IDs are never recomputed. */
+    public static String computeId(String canonicalSql, String dialect, String policy) {
+        Objects.requireNonNull(canonicalSql, "canonicalSql");
+        Objects.requireNonNull(dialect, "dialect");
+        Objects.requireNonNull(policy, "policy");
+        try {
+            return sha256Hex(new com.fasterxml.jackson.databind.ObjectMapper()
+                .writeValueAsString(java.util.List.of(policy, dialect, canonicalSql)));
+        } catch (com.fasterxml.jackson.core.JsonProcessingException error) {
+            throw new IllegalStateException("IDENTITY_ENCODING_FAILED", error);
+        }
     }
 }

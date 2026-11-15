@@ -34,12 +34,9 @@ public final class ChangeAttribution {
      */
     public static DiffResult attributeChangeDetailed(String before, String after, String dialect)
             throws SqlParseException {
-        SqlNode beforeNorm = SqlPredicateNormalizer.normalize(before, dialect);
-        SqlNode afterNorm  = SqlPredicateNormalizer.normalize(after, dialect);
-        List<NodeToken> seqBefore = AstSerializer.serializeNode(beforeNorm);
-        List<NodeToken> seqAfter  = AstSerializer.serializeNode(afterNorm);
-        List<NodeToken> canonBefore = SqlCanonicalizer.canonicalize(seqBefore);
-        List<NodeToken> canonAfter  = SqlCanonicalizer.canonicalize(seqAfter);
-        return AstLcsDiffer.diffResult(canonBefore, canonAfter);
+        var left = StructuralSqlCodec.fromAst(StructuralSqlCodec.parse(before,dialect),dialect);
+        var right = StructuralSqlCodec.fromAst(StructuralSqlCodec.parse(after,dialect),dialect);
+        var delta = StructuralSqlCodec.diff(left,right);
+        return new DiffResult(delta.ops(),delta.degraded(),delta.method(),delta.errorReason());
     }
 }

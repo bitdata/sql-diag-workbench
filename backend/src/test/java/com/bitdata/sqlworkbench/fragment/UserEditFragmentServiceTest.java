@@ -136,7 +136,8 @@ class UserEditFragmentServiceTest {
         String sql = "UPDATE t SET a = 1";
         String degradedCanonical =
             SqlCanonicalizer.canonicalizeSqlWithStatus(sql, "postgresql").canonicalSql();
-        String degradedId = FragmentIdentity.computeId(degradedCanonical, "postgresql");
+        assertNull(degradedCanonical,"Unsupported AST no longer receives trusted canonical content");
+        String degradedId = FragmentIdentity.sha256Hex(sql + "|postgresql");
 
         var result = service.createUserEdit(sql, "parent-1", Set.of(degradedId), "postgresql", null);
 

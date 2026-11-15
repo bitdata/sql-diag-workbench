@@ -36,6 +36,13 @@ public class DiagnosticsController {
 
     private static final Logger log = LoggerFactory.getLogger(DiagnosticsController.class);
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.bitdata.sqlworkbench.connection.ConnectionService connections;
+    private void requireSupported(String connectionId) {
+        if(connections!=null && connectionId!=null && connections.getById(connectionId)
+                .map(c->"oracle".equalsIgnoreCase(c.dialect())).orElse(false))
+            throw new com.bitdata.sqlworkbench.session.WorkspaceIdentity.Failure(422,"ORACLE_DIAGNOSTICS_UNSUPPORTED");
+    }
     private final RuleRegistry ruleRegistry;
     private final RowTraceEngine traceEngine;
     private final TraceStore traceStore;
@@ -140,12 +147,14 @@ public class DiagnosticsController {
         if (request == null || request.executionId() == null || request.executionId().isBlank()
             || request.sql() == null || request.sql().isBlank()
             || request.connectionId() == null || request.connectionId().isBlank()
-            || !java.util.Set.of("postgresql", "mysql").contains(request.dialect() == null ? "" : request.dialect())) {
+            || !java.util.Set.of("postgresql", "mysql", "sqlserver", "oracle").contains(request.dialect() == null ? "" : request.dialect())) {
             throw new IllegalArgumentException("executionId, exact SQL and connection are required");
         }
         var observation = executionEngine.resolvePlanObservation(
             request.executionId(), request.sql(), request.connectionId(), request.sessionId());
         String dialect = request.dialect();
+        if("sqlserver".equals(dialect)||"oracle".equals(dialect))return planSqlMappingService.map(request.executionId(),dialect,request.sql(),null,
+            request.fragment(),List.of());
         if (!"VERIFIED".equals(observation.sourceState()) || observation.result() == null) {
             String reason = observation.errorReason() == null ? "PLAN_SOURCE_UNAVAILABLE" : observation.errorReason();
             var unavailable = planSqlMappingService.map(request.executionId(), dialect, request.sql(), null,
@@ -162,8 +171,9 @@ public class DiagnosticsController {
     @PostMapping("/trace-async")
     public ResponseEntity<?> submitTrace(@RequestBody TraceRequest request) {
         try {
-            String traceId = traceEngine.submit(request);
+            String traceId = traceEngine.submitAuthenticated(request);
             return ResponseEntity.ok(java.util.Map.of("traceId", traceId));
+        } catch (com.bitdata.sqlworkbench.session.WorkspaceIdentity.Failure e) { throw e;
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(java.util.Map.of(
                 "code", "TRACE_VALIDATION_ERROR", "errorReason", "TRACE_VALIDATION_ERROR", "degraded", true,
@@ -172,7 +182,8 @@ public class DiagnosticsController {
         } catch (Exception e) {
             return ResponseEntity.internalServerError().body(java.util.Map.of(
                 "code", "TRACE_ERROR",
-                "message", e.getMessage()
+                "errorReason", "TRACE_ERROR", "degraded", true,
+                "message", e.getMessage()==null?"Trace submission failed":e.getMessage()
             ));
         }
     }
@@ -187,6 +198,7 @@ public class DiagnosticsController {
 
     @GetMapping("/trace-async/{traceId}")
     public ResponseEntity<?> getTraceProgress(@PathVariable String traceId) {
+        traceEngine.authorizeTask(traceId);
         TraceProgress progress = traceStore.toProgress(traceId);
         if (progress == null) {
             return ResponseEntity.notFound().build();
@@ -196,6 +208,7 @@ public class DiagnosticsController {
 
     @DeleteMapping("/trace-async/{traceId}")
     public ResponseEntity<?> cancelTrace(@PathVariable String traceId) {
+        traceEngine.authorizeTask(traceId);
         boolean cancelled = traceEngine.cancel(traceId);
         if (cancelled) {
             return ResponseEntity.ok(java.util.Map.of("status", "cancelled"));

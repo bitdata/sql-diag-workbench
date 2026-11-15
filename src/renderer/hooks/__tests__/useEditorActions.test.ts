@@ -5,6 +5,7 @@ import { renderHook, act } from '@testing-library/react'
 import { useEditorActions } from '../useEditorActions'
 import type { FragmentNode, ParseResult } from '../../types/fragment'
 import type { UseTabsApi } from '../useTabs'
+import type { FlushResult } from '../useWorkspacePersistence'
 import type { SessionWorkspaceState } from '../../types/session'
 import type { DiagnosticsHook } from '../useDiagnostics'
 
@@ -152,6 +153,34 @@ function setup(overrides: Record<string, unknown> = {}) {
 }
 
 describe('useEditorActions', () => {
+  it('waits for the saved revision to render before parsing and fetching positions', async () => {
+    const { result, tabsApi, parse, fetchPositions } = setup()
+    let finish!: (value: { savedSessionIds: string[]; issues: []; workspaceRevisions: Record<string, number> }) => void
+    tabsApi.flushWorkspaces = vi.fn(() => new Promise<FlushResult>(resolve => { finish = resolve }))
+    act(() => result.current.handleParse())
+    expect(parse).not.toHaveBeenCalled()
+    await act(async () => {
+      tabsApi.updateWorkspace('tab-1', { workspaceRevision: 3 })
+      finish({ savedSessionIds: ['tab-1'], issues: [], workspaceRevisions: { 'tab-1': 3 } })
+    })
+    expect(parse).toHaveBeenCalledExactlyOnceWith('SELECT 1', 'postgresql')
+    expect(fetchPositions).toHaveBeenCalledExactlyOnceWith('SELECT 1', 'postgresql')
+  })
+
+  it('preserves a changed draft rather than parsing the SQL captured before saving', async () => {
+    const { result, tabsApi, parse, fetchPositions } = setup()
+    let finish!: (value: { savedSessionIds: string[]; issues: []; workspaceRevisions: Record<string, number> }) => void
+    tabsApi.flushWorkspaces = vi.fn(() => new Promise<FlushResult>(resolve => { finish = resolve }))
+    act(() => result.current.handleParse())
+    await act(async () => {
+      tabsApi.updateWorkspace('tab-1', { sql: 'SELECT 2', workspaceRevision: 3 })
+      finish({ savedSessionIds: ['tab-1'], issues: [], workspaceRevisions: { 'tab-1': 3 } })
+    })
+    expect(parse).not.toHaveBeenCalled()
+    expect(fetchPositions).not.toHaveBeenCalled()
+    expect(result.current.currentSql).toBe('SELECT 2')
+    expect(result.current.parsePreparationError).toMatch(/changed while saving/)
+  })
   beforeEach(() => {
     vi.restoreAllMocks()
   })
@@ -162,6 +191,25 @@ describe('useEditorActions', () => {
     expect(result.current.currentSql).toBe('SELECT 1')
     expect(result.current.viewerSql).toBe('SELECT 1')
     expect(result.current.viewerReadOnly).toBe(false)
+  })
+
+  it('keeps Oracle format failure local and leaves SQL unchanged', () => {
+    const { result, tabsApi } = setup({ dialect: 'oracle' })
+    act(() => result.current.handleFormat())
+    expect(result.current.formatError).toBe('Oracle formatting is unavailable. Original SQL retained.')
+    expect(result.current.currentSql).toBe('SELECT 1')
+    expect(tabsApi.updateWorkspace).not.toHaveBeenCalled()
+    act(() => result.current.handleSqlChange('SELECT 2 FROM dual'))
+    expect(result.current.formatError).toBeNull()
+  })
+
+  it('does not overwrite a parsed exploration through inline edits or formatting', () => {
+    const { result, tabsApi } = setup({ hasParsedTree: true })
+    expect(result.current.viewerReadOnly).toBe(true)
+    act(() => result.current.handleSqlChange('SELECT 42'))
+    act(() => result.current.handleFormat())
+    expect(result.current.currentSql).toBe('SELECT 1')
+    expect(tabsApi.updateWorkspace).not.toHaveBeenCalled()
   })
 
   it('handleNodeSelect sets viewerMode to "browse" and viewerSql to node SQL', () => {

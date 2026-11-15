@@ -34,6 +34,7 @@ function makeMemoryStorage(): Storage {
 }
 
 const SESSION = {
+  identityPolicy: 'structural-p0p1-v2', workspaceRevision: 0,
   id: 'sess-1',
   name: 'Test tab',
   connectionId: 'conn-1',
@@ -119,8 +120,9 @@ async function renderBootedApp() {
 }
 
 // The real virtual tree has no viewport in jsdom; exercise App's real selection handler.
-vi.mock('../components/TreeView/FragmentTree', () => ({ default: ({ tree, onSelectNode }: { tree: { id: string } | null; onSelectNode: (id: string) => void }) =>
-  tree ? <button data-fragment-id={tree.id} onClick={() => onSelectNode(tree.id)}>RECON browse root</button> : null }))
+vi.mock('../components/TreeView/FragmentTree', () => ({ default: ({ tree, onSelectNode }: { tree: { id: string; children: { id: string }[] } | null; onSelectNode: (id: string) => void }) =>
+  tree ? <><button data-fragment-id={tree.id} onClick={() => onSelectNode(tree.id)}>RECON browse root</button>
+    {tree.children.map(child => <button key={child.id} data-fragment-id={child.id} onClick={() => onSelectNode(child.id)}>RECON browse {child.id}</button>)}</> : null }))
 
 describe('diagnostic lifecycle ownership', () => {
   beforeEach(() => {
@@ -128,29 +130,30 @@ describe('diagnostic lifecycle ownership', () => {
     bootMocks()
   })
 
-  it('restores diagnostics after input -> no-plan browse -> cached input without executing the plan again', async () => {
+  it('restores diagnostics after root -> no-plan child -> cached root without executing the plan again', async () => {
     let posts = 0, executions = 0
     server.use(
       http.post('*/api/execution/analyze', () => { executions++; return HttpResponse.json({ executionId: 'exec-1', status: 'QUEUED' }) }),
       http.get('*/api/execution/execute/:id', () => HttpResponse.json(COMPLETED_PLAN)),
-      http.post('*/api/diagnostics/plan', () => {
+      http.post(/\/api\/diagnostics\/(plan|analyze)$/, () => {
         posts++
         return HttpResponse.json({ findings: [{ ...mockFinding, title: 'RECON evidence sentinel' }], evaluation: { version: 1, executionId: 'exec-1', sourceState: 'VERIFIED', rules: [], degraded: false, errorReason: null } })
       }),
     )
     const user = userEvent.setup()
     await renderBootedApp()
+    fireEvent.click(await screen.findByRole('button', { name: 'RECON browse root' }))
     fireEvent.click(screen.getByRole('radio', { name: 'Performance' }))
     await runAnalyze(user)
     await waitFor(() => expect(posts).toBe(1))
     fireEvent.click(screen.getByRole('tab', { name: 'Diagnostics' }))
     await screen.findByText('RECON evidence sentinel')
-    const child = document.querySelector<HTMLElement>('[data-fragment-id="node-root"]')
+    const child = document.querySelector<HTMLElement>('[data-fragment-id="node-join"]')
     expect(child).not.toBeNull()
     fireEvent.click(child!)
     await screen.findByText('Read-only fragment')
-    fireEvent.click(screen.getByRole('button', { name: /Edit original SQL/ }))
-    await screen.findByText('Current SQL')
+    await waitFor(() => expect(screen.queryByText('RECON evidence sentinel')).not.toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'RECON browse root' }))
     await waitFor(() => expect(posts).toBe(2))
     await screen.findByText('RECON evidence sentinel')
     expect(executions).toBe(1)

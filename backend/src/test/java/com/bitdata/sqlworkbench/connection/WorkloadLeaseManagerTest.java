@@ -12,6 +12,22 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class WorkloadLeaseManagerTest {
+    @Test void shutdownDoesNotInterruptAConnectionCloseAlreadyRunning()throws Exception {
+        var manager=new WorkloadLeaseManager();var physical=mock(Connection.class);
+        var entered=new java.util.concurrent.CountDownLatch(1);var release=new java.util.concurrent.CountDownLatch(1);
+        var returned=new java.util.concurrent.CountDownLatch(1);var interrupted=new java.util.concurrent.atomic.AtomicBoolean();
+        org.mockito.Mockito.doAnswer(i->{entered.countDown();try{release.await(4,TimeUnit.SECONDS);}catch(InterruptedException failure){interrupted.set(true);}finally{returned.countDown();}return null;}).when(physical).close();
+        var ticket=manager.acquireOrdinary();
+        try {
+            manager.retryClose(physical,ticket);assertTrue(entered.await(2,TimeUnit.SECONDS));manager.close();
+            assertFalse(returned.await(100,TimeUnit.MILLISECONDS),"shutdown must leave an active JDBC close running");
+            assertFalse(interrupted.get());assertEquals(1,manager.snapshot().ordinaryTickets());
+            release.countDown();assertTrue(returned.await(2,TimeUnit.SECONDS));
+            long end=System.nanoTime()+TimeUnit.SECONDS.toNanos(2);while(manager.snapshot().ordinaryTickets()>0&&System.nanoTime()<end)Thread.sleep(5);
+            assertEquals(0,manager.snapshot().ordinaryTickets());
+        } finally {release.countDown();manager.close();}
+    }
+
     @Test
     void exclusiveTicketRejectsNewOrdinaryWorkAndReleasesOnce() throws Exception {
         WorkloadLeaseManager manager=new WorkloadLeaseManager();

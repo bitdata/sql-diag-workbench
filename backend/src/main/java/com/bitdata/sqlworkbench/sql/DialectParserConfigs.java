@@ -31,9 +31,6 @@ public final class DialectParserConfigs {
      * SLF4J warn 以满足规则 #2 可观测降级要求）。
      */
     public static SqlParser.Config forDialect(String dialect) {
-        // Canonical identity retains its historical folding independently of
-        // execution AST spelling. Do not use these static diff configs to emit SQL.
-        return RESOLVER.parserConfig(dialect)
-            .withUnquotedCasing(org.apache.calcite.avatica.util.Casing.TO_UPPER);
+        return RESOLVER.parserConfig(dialect);
     }
 }

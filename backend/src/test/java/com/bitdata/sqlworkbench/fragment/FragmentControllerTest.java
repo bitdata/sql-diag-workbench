@@ -1,5 +1,8 @@
 package com.bitdata.sqlworkbench.fragment;
 
+import com.bitdata.sqlworkbench.session.GraphHttpFixtures;
+import com.bitdata.sqlworkbench.session.SessionStore;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,6 +18,9 @@ import static org.hamcrest.Matchers.*;
 @SpringBootTest
 @AutoConfigureMockMvc
 class FragmentControllerTest {
+
+    @Autowired SessionStore sessions;
+    String admit(String body) throws Exception { return GraphHttpFixtures.admit(body,sessions); }
 
     @Autowired
     private MockMvc mockMvc;
@@ -33,7 +39,7 @@ class FragmentControllerTest {
 
         mockMvc.perform(post("/api/fragment/create-user-edit")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(requestJson))
+                .content(admit(requestJson)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.classification").value("EDIT"))
             .andExpect(jsonPath("$.navigatedToExisting").value(false))
@@ -41,7 +47,7 @@ class FragmentControllerTest {
             .andExpect(jsonPath("$.node.id", matchesPattern("[a-f0-9]{64}")))
             .andExpect(jsonPath("$.node.type").value("USER_EDITED"))
             .andExpect(jsonPath("$.node.label").value("test edit description"))
-            .andExpect(jsonPath("$.node.editParentId").value("parent-abc"))
+            .andExpect(jsonPath("$.node.editParentId").value(GraphHttpFixtures.parentId()))
             .andExpect(jsonPath("$.node.canonicalSql").isNotEmpty())
             .andExpect(jsonPath("$.node.createdAt").isNotEmpty())
             .andExpect(jsonPath("$.node.parentIds", hasSize(0)));
@@ -60,7 +66,7 @@ class FragmentControllerTest {
 
         mockMvc.perform(post("/api/fragment/create-user-edit")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(requestJson))
+                .content(admit(requestJson)))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
     }
@@ -78,7 +84,7 @@ class FragmentControllerTest {
 
         mockMvc.perform(post("/api/fragment/create-user-edit")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(requestJson))
+                .content(admit(requestJson)))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
     }
@@ -98,7 +104,7 @@ class FragmentControllerTest {
 
         var firstResult = mockMvc.perform(post("/api/fragment/create-user-edit")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(firstRequest))
+                .content(admit(firstRequest)))
             .andExpect(status().isOk())
             .andReturn();
 
@@ -121,7 +127,7 @@ class FragmentControllerTest {
 
         mockMvc.perform(post("/api/fragment/create-user-edit")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(secondRequest))
+                .content(admit(secondRequest)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.classification").value("NAVIGATE"))
             .andExpect(jsonPath("$.navigatedToExisting").value(true))
@@ -134,10 +140,10 @@ class FragmentControllerTest {
         // classification + errorReason 表达（spec §4.2）。
         mockMvc.perform(post("/api/fragment/create-user-edit")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("""
+                .content(admit("""
                     {"sql":"UPDATE t SET a = 1","parentFragmentId":"parent-1",
                      "dagContextIds":[],"dialect":"postgresql","description":null}
-                    """))
+                    """)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.classification").value("UNSUPPORTED"))
             .andExpect(jsonPath("$.errorReason").isNotEmpty())

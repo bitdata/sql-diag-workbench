@@ -12,29 +12,29 @@ import java.util.*;
 public class SessionStore {
     private final JdbcTemplate jdbc;
     private final TransactionTemplate tx;
-    private static final String COLUMNS = "id,name,sql_text,dialect,connection_id,fragment_tree_json,workspace_snapshot_json,created_at,updated_at";
+    private static final String COLUMNS = "id,name,sql_text,dialect,connection_id,fragment_tree_json,workspace_snapshot_json,created_at,updated_at,identity_policy,workspace_revision";
     private static final RowMapper<Session> MAPPER = (rs, n) -> new Session(
         rs.getString("id"), rs.getString("name"), rs.getString("sql_text"),
         rs.getString("dialect"), rs.getString("connection_id"), rs.getString("fragment_tree_json"),
         rs.getString("workspace_snapshot_json"), Instant.parse(rs.getString("created_at")),
-        Instant.parse(rs.getString("updated_at")));
+        Instant.parse(rs.getString("updated_at")),rs.getString("identity_policy"),rs.getLong("workspace_revision"),rs.getString("workspace_instance_id"));
 
     public SessionStore(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
         this.tx = new TransactionTemplate(new DataSourceTransactionManager(Objects.requireNonNull(jdbc.getDataSource())));
     }
     public List<Session> findAll() {
-        return jdbc.query("SELECT " + COLUMNS + " FROM sessions ORDER BY updated_at DESC", MAPPER);
+        return jdbc.query("SELECT " + COLUMNS + ",workspace_instance_id FROM sessions ORDER BY updated_at DESC", MAPPER);
     }
     public Optional<Session> findById(String id) {
-        return jdbc.query("SELECT " + COLUMNS + " FROM sessions WHERE id=?", MAPPER, id).stream().findFirst();
+        return jdbc.query("SELECT " + COLUMNS + ",workspace_instance_id FROM sessions WHERE id=?", MAPPER, id).stream().findFirst();
     }
     /** Creation only: stale writers must never resurrect a deleted session. */
     public Session save(Session s) {
         Instant now = Instant.now();
-        jdbc.update("INSERT INTO sessions (" + COLUMNS + ") VALUES (?,?,?,?,?,?,?,?,?)",
+        jdbc.update("INSERT INTO sessions (" + COLUMNS + ") VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             s.id(), s.name(), s.sqlText(), s.dialect(), s.connectionId(), s.fragmentTreeJson(),
-            s.workspaceSnapshotJson(), now.toString(), now.toString());
+            s.workspaceSnapshotJson(), now.toString(), now.toString(),s.identityPolicy(),s.workspaceRevision());
         return findById(s.id()).orElseThrow();
     }
     public Session createWithOrigin(Session s, SessionEditLink.Origin origin) {
@@ -49,6 +49,10 @@ public class SessionStore {
         return createWithOrigin(s, origin, requestId, fingerprint, null);
     }
     public Session createWithOrigin(Session s, SessionEditLink.Origin origin, String requestId, String fingerprint, String profileId) {
+        return createWithOrigin(s,origin,requestId,fingerprint,profileId,null,null);
+    }
+    public Session createWithOrigin(Session s, SessionEditLink.Origin origin, String requestId, String fingerprint,
+            String profileId, String legacyFingerprint, java.util.function.Supplier<Session> validateCreation) {
         return tx.execute(status -> {
             jdbc.update("UPDATE storage_generation SET revision=revision+1 WHERE id=1");
             if (requestId != null) {
@@ -60,7 +64,8 @@ public class SessionStore {
                     """, requestId, fingerprint, s.id(), Instant.now().toString());
                 if (reserved == 0) {
                     var receipt = jdbc.queryForMap("SELECT request_fingerprint,session_id FROM session_creation_receipts WHERE request_id=?", requestId);
-                    if (!fingerprint.equals(receipt.get("request_fingerprint")))
+                    if (!fingerprint.equals(receipt.get("request_fingerprint"))
+                            && (legacyFingerprint == null || !legacyFingerprint.equals(receipt.get("request_fingerprint"))))
                         throw new CreationFailure("CREATION_REQUEST_CONFLICT", "This creation request was already used with different content. Start a new operation.");
                     Session replay = findById((String) receipt.get("session_id")).orElseThrow(() ->
                         new CreationFailure("CREATION_TARGET_GONE", "The tab created by this operation has been deleted. Start a new operation."));
@@ -68,7 +73,8 @@ public class SessionStore {
                     return replay;
                 }
             }
-            Session created = save(s);
+            Session candidate = validateCreation == null ? s : validateCreation.get();
+            Session created = save(candidate);
             protect(created.id(), profileId);
             if (origin != null) {
                 jdbc.update("""
@@ -93,14 +99,38 @@ public class SessionStore {
             return findById(id);
         });
     }
-    public Optional<Session> replaceWorkspace(String id, String sql, String dialect, String connectionId,
-                                               String snapshot, String tree) {
+    /** Write reservation, authoritative admission and compare-and-set share one transaction. */
+    public Session replaceWorkspace(IdentityContext context, String sql, String dialect, String connectionId,
+            String snapshot, String tree) {
         return tx.execute(status -> {
+            if (context == null) throw new WorkspaceIdentity.Failure(400,"IDENTITY_CONTEXT_REQUIRED");
+            jdbc.update("UPDATE sessions SET workspace_revision=workspace_revision WHERE id=?", context.sessionId());
+            Session prior = new WorkspaceIdentity(this).require(context, null);
+            if (prior.workspaceRevision() == Long.MAX_VALUE)
+                throw new WorkspaceIdentity.Failure(409,"WORKSPACE_REVISION_EXHAUSTED");
+            if (!prior.dialect().equals(dialect) && (tree != null || !textOnlySnapshot(snapshot, dialect)))
+                throw new WorkspaceIdentity.Failure(409,"DIALECT_SWITCH_REQUIRES_EMPTY_GRAPH");
             int changed = jdbc.update("""
-                UPDATE sessions SET sql_text=?,dialect=?,connection_id=?,workspace_snapshot_json=?,fragment_tree_json=?,updated_at=? WHERE id=?
-                """, sql, dialect, connectionId, snapshot, tree, Instant.now().toString(), id);
-            return changed == 0 ? Optional.empty() : findById(id);
+                UPDATE sessions SET sql_text=?,dialect=?,connection_id=?,workspace_snapshot_json=?,fragment_tree_json=?,
+                  updated_at=?,workspace_revision=workspace_revision+1
+                WHERE id=? AND identity_policy=? AND workspace_revision=?
+                """, sql,dialect,connectionId,snapshot,tree,Instant.now().toString(),
+                context.sessionId(),context.identityPolicy(),context.workspaceRevision());
+            if (changed != 1) throw new WorkspaceIdentity.Failure(409,"WORKSPACE_REVISION_CONFLICT");
+            return findById(context.sessionId()).orElseThrow(() -> new WorkspaceIdentity.Failure(404,"WORKSPACE_NOT_FOUND"));
         });
+    }
+    private static boolean textOnlySnapshot(String snapshot, String dialect) {
+        if (snapshot == null) return true;
+        try {
+            var value = new com.fasterxml.jackson.databind.ObjectMapper().readTree(snapshot);
+            return value != null && value.path("version").isIntegralNumber() && value.path("version").asLong() == 3
+                && com.bitdata.sqlworkbench.sql.diff.StructuralSqlCodec.POLICY.equals(value.path("identityPolicy").asText())
+                && Objects.equals(dialect, value.path("dialect").asText())
+                && value.path("graph").isNull() && value.path("treeProjection").isNull() && value.path("selectedNodeId").isNull();
+        } catch (com.fasterxml.jackson.core.JsonProcessingException invalid) {
+            return false; // Caller returns the observable DIALECT_SWITCH_REQUIRES_EMPTY_GRAPH refusal.
+        }
     }
     public List<SessionEditLink> editLinks(List<String> sessionIds) {
         if (sessionIds.isEmpty()) return List.of();
@@ -129,7 +159,7 @@ public class SessionStore {
         tx.executeWithoutResult(status -> { jdbc.update("DELETE FROM sessions WHERE id=?", id); pruneLinks(); });
     }
     public List<Session> findStale(int daysOld) {
-        return jdbc.query("SELECT " + COLUMNS + " FROM sessions WHERE updated_at<? ORDER BY updated_at ASC", MAPPER,
+        return jdbc.query("SELECT " + COLUMNS + ",workspace_instance_id FROM sessions WHERE updated_at<? ORDER BY updated_at ASC", MAPPER,
             Instant.now().minusSeconds(daysOld * 86400L).toString());
     }
     public int deleteStale(int daysOld) {

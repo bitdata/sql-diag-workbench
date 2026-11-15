@@ -27,7 +27,7 @@ class StorageMaintenanceHttpTest {
         var jdbc = new JdbcTemplate(ds);
         ReflectionTestUtils.invokeMethod(new SqliteConfig(), "initSchema", jdbc);
         var store = new SessionStore(jdbc);
-        store.save(Session.builder().id("owner").name("owner").sqlText("SELECT 1").build());
+        store.save(Session.builder().id("owner").identityPolicy(com.bitdata.sqlworkbench.sql.diff.StructuralSqlCodec.POLICY).name("owner").sqlText("SELECT 1").build());
         var mvc = MockMvcBuilders.standaloneSetup(new SessionController(store, new ObjectMapper().findAndRegisterModules()))
             .setControllerAdvice(new StorageErrorAdvice()).build();
         var gate = (ReentrantReadWriteLock) ReflectionTestUtils.getField(ds, "gate");
@@ -36,7 +36,7 @@ class StorageMaintenanceHttpTest {
         try {
             worker.submit(() -> {
                 var failure = assertThrows(CannotCreateTransactionException.class,
-                    () -> store.replaceWorkspace("owner", "SELECT 2", "postgresql", null, null, null));
+                    () -> store.replaceWorkspace(new com.bitdata.sqlworkbench.session.IdentityContext("owner",com.bitdata.sqlworkbench.sql.diff.StructuralSqlCodec.POLICY,0L), "SELECT 2", "postgresql", null, null, null));
                 assertInstanceOf(StorageDataSource.Maintenance.class, failure.getCause());
                 mvc.perform(get("/api/sessions/owner"))
                     .andExpect(status().isServiceUnavailable()).andExpect(jsonPath("$.code").value("STORAGE_MAINTENANCE"));
@@ -45,7 +45,7 @@ class StorageMaintenanceHttpTest {
                     """))
                     .andExpect(status().isServiceUnavailable()).andExpect(jsonPath("$.code").value("CREATION_STORAGE_BUSY"));
                 mvc.perform(put("/api/sessions/owner/workspace").contentType("application/json").content("""
-                    {"sqlText":"SELECT 2","dialect":"postgresql","connectionId":null,"workspaceSnapshotJson":null}
+                    {"identityContext":{"sessionId":"owner","identityPolicy":"structural-p0p1-v2","workspaceRevision":0},"sqlText":"SELECT 2","dialect":"postgresql","connectionId":null,"workspaceSnapshotJson":null}
                     """))
                     .andExpect(status().isServiceUnavailable()).andExpect(jsonPath("$.code").value("STORAGE_MAINTENANCE"))
                     .andExpect(jsonPath("$.degraded").value(true));
@@ -58,7 +58,7 @@ class StorageMaintenanceHttpTest {
         assertEquals("SELECT 1", store.findById("owner").orElseThrow().sqlText());
         assertTrue(store.findById("during-maintenance").isEmpty());
         mvc.perform(put("/api/sessions/owner/workspace").contentType("application/json").content("""
-            {"sqlText":"SELECT 3","dialect":"postgresql","connectionId":null,"workspaceSnapshotJson":null}
+            {"identityContext":{"sessionId":"owner","identityPolicy":"structural-p0p1-v2","workspaceRevision":0},"sqlText":"SELECT 3","dialect":"postgresql","connectionId":null,"workspaceSnapshotJson":null}
             """))
             .andExpect(status().isOk());
         assertEquals("SELECT 3", store.findById("owner").orElseThrow().sqlText());

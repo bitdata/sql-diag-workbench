@@ -5,6 +5,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
+import com.bitdata.sqlworkbench.storage.SqliteWriteReservation;
 import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
@@ -159,7 +160,7 @@ public class KeychainStore {
             references.add(ref);
             var values=entries.get(ref);
             if(refCounts.get(ref)>1) {
-                tx.execute(s->{markPending(id,"NEEDS_REVIEW","CREDENTIAL_NEEDS_REVIEW");return null;});
+                tx.execute(s->{SqliteWriteReservation.acquire(jdbc);markPending(id,"NEEDS_REVIEW","CREDENTIAL_NEEDS_REVIEW");return null;});
                 unresolved++; continue;
             }
             State existing=storedState(id);
@@ -173,7 +174,7 @@ public class KeychainStore {
                 continue;
             }
             if(values==null||values.size()!=1) {
-                tx.execute(s->{markPending(id,"NEEDS_REVIEW","CREDENTIAL_NEEDS_REVIEW"); return null;});
+                tx.execute(s->{SqliteWriteReservation.acquire(jdbc);markPending(id,"NEEDS_REVIEW","CREDENTIAL_NEEDS_REVIEW"); return null;});
                 unresolved+=values==null?1:values.size();
                 continue;
             }
@@ -182,7 +183,7 @@ public class KeychainStore {
                 combined=Base64.getDecoder().decode(values.get(0));
                 if(combined.length<28) throw new IllegalArgumentException();
             } catch(IllegalArgumentException e) {
-                tx.execute(s->{markPending(id,"NEEDS_REVIEW","LEGACY_FORMAT_INVALID"); return null;});
+                tx.execute(s->{SqliteWriteReservation.acquire(jdbc);markPending(id,"NEEDS_REVIEW","LEGACY_FORMAT_INVALID"); return null;});
                 unresolved++; continue;
             }
             byte[] clear;
@@ -195,11 +196,12 @@ public class KeychainStore {
                     clear=cipher.doFinal(combined,12,combined.length-12);
                 } finally { Arrays.fill(key,(byte)0); }
             } catch(Exception e) {
-                tx.execute(s->{markPending(id,"NEEDS_REENTRY","CREDENTIAL_DECRYPT_FAILED"); return null;});
+                tx.execute(s->{SqliteWriteReservation.acquire(jdbc);markPending(id,"NEEDS_REENTRY","CREDENTIAL_DECRYPT_FAILED"); return null;});
                 unresolved++; continue;
             }
             try {
                 tx.execute(s->{
+                    SqliteWriteReservation.acquire(jdbc);
                     if (jdbc.queryForObject("SELECT count(*) FROM connections WHERE id=?",Integer.class,id)==0) return null;
                     State current=storedState(id);
                     if(!current.intent.equals("AVAILABLE") && !current.intent.equals("NO_PASSWORD"))
@@ -208,7 +210,7 @@ public class KeychainStore {
                 });
             } catch(CredentialFailure e) {
                 unresolved++;
-                tx.execute(s->{markPending(id,"NEEDS_REENTRY",e.code);return null;});
+                tx.execute(s->{SqliteWriteReservation.acquire(jdbc);markPending(id,"NEEDS_REENTRY",e.code);return null;});
             } finally { Arrays.fill(clear,(byte)0); }
         }
         for(var entry:entries.entrySet()) if(!references.contains(entry.getKey())) unresolved+=entry.getValue().size();

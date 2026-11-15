@@ -49,11 +49,16 @@ class DialectSwitchTest {
     }
 
     @Test
-    void oracleDeparse_producesUnquotedIdentifier() throws Exception {
-        String sql = NodeToSql.toSql(parseSelectStarFrom("dual_t"),
-            new OracleStrategy().getDialectProfile());
-        assertTrue(sql.toLowerCase().contains("dual_t"),
-            "Oracle deparse should contain unquoted 'dual_t': " + sql);
+    void oracleDeparse_preservesQuotedIdentifierSemantics() throws Exception {
+        var profile = new OracleStrategy().getDialectProfile();
+        var config = new SqlDialectResolver(com.bitdata.sqlworkbench.connection.DatabaseStrategyFactory.withBuiltinStrategies()).parserConfig("oracle");
+        for (String name : new String[]{"dual_t", "\"DUAL_T\"", "\"dual_t\""}) {
+            var original = SqlParser.create("SELECT * FROM " + name, config).parseQuery();
+            String sql = NodeToSql.toSql(original, profile);
+            assertTrue(sql.contains(name.equals("dual_t") ? "\"DUAL_T\"" : name), sql);
+            var reparsed = SqlParser.create(sql, config).parseQuery();
+            assertTrue(original.equalsDeep(reparsed, org.apache.calcite.util.Litmus.IGNORE), sql);
+        }
     }
 
     @Test
@@ -65,7 +70,7 @@ class DialectSwitchTest {
 
         assertEquals(PostgresqlSqlDialect.DEFAULT, pg.calciteDialect());
         assertEquals(MysqlSqlDialect.DEFAULT, my.calciteDialect());
-        assertEquals(MssqlSqlDialect.DEFAULT, ms.calciteDialect());
+        assertTrue(ms.calciteDialect() instanceof com.bitdata.sqlworkbench.sql.tsql.TsqlExecutableDialect);
         assertEquals(OracleSqlDialect.DEFAULT, or.calciteDialect());
     }
 }

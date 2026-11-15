@@ -19,6 +19,7 @@ function ExperimentSummary({ nodeId }: { nodeId: string }) {
 }
 
 interface LineagePanelProps {
+  workspace?: import('../../types/session').SessionWorkspaceState | null
   chain: FragmentNode[]
   pathNotice?: string | null
   /** Full set of DAG nodes — needed by useDiffGraph to find dead-end ghosts
@@ -78,6 +79,7 @@ function truncate(s: string, n: number): string {
  */
 export default function LineagePanel({
   chain,
+  workspace,
   pathNotice,
   allNodes = EMPTY_NODES,
   selectedNodeId,
@@ -107,7 +109,7 @@ export default function LineagePanel({
     backendUrl,
     parentNode?.sqlFragment ?? '',
     activeNode?.sqlFragment ?? '',
-    dialect
+    dialect, workspace
   )
 
   // Spec §3.3 L2 / §5.2.3 — diff-graph view: chain + dead-end ghost nodes,
@@ -117,7 +119,7 @@ export default function LineagePanel({
     chain,
     allNodes,
     backendUrl,
-    dialect
+    dialect, workspace
   )
 
   return (

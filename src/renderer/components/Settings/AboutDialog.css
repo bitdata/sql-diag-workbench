@@ -1,0 +1,10 @@
+.about-product { margin: 0 0 8px; color: var(--text-primary); font-size: 16px; }
+.about-version, .about-description, .about-repository-label, .about-copyright {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.about-repository-label { margin-bottom: 8px; }
+.about-repository { color: var(--accent); font-size: 12px; overflow-wrap: anywhere; }
+.about-repository:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }

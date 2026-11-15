@@ -11,8 +11,20 @@ public record Session(
     String fragmentTreeJson,
     String workspaceSnapshotJson,
     Instant createdAt,
-    Instant updatedAt
+    Instant updatedAt,
+    String identityPolicy,
+    long workspaceRevision,
+    String workspaceInstanceId
 ) {
+    public Session(String id,String name,String sqlText,String dialect,String connectionId,String fragmentTreeJson,
+            String workspaceSnapshotJson,Instant createdAt,Instant updatedAt,String identityPolicy,long workspaceRevision) {
+        this(id,name,sqlText,dialect,connectionId,fragmentTreeJson,workspaceSnapshotJson,createdAt,updatedAt,identityPolicy,workspaceRevision,null);
+    }
+    public Session(String id, String name, String sqlText, String dialect, String connectionId,
+            String fragmentTreeJson, String workspaceSnapshotJson, Instant createdAt, Instant updatedAt) {
+        this(id,name,sqlText,dialect,connectionId,fragmentTreeJson,workspaceSnapshotJson,createdAt,updatedAt,
+            IdentityContext.LEGACY_POLICY,0);
+    }
     public static Builder builder() { return new Builder(); }
 
     public static class Builder {
@@ -25,6 +37,8 @@ public record Session(
         private String workspaceSnapshotJson;
         private Instant createdAt = Instant.now();
         private Instant updatedAt = Instant.now();
+        private String identityPolicy = IdentityContext.LEGACY_POLICY;
+        private long workspaceRevision;
 
         public Builder id(String id) { this.id = id; return this; }
         public Builder name(String name) { this.name = name; return this; }
@@ -35,9 +49,12 @@ public record Session(
         public Builder workspaceSnapshotJson(String json) { this.workspaceSnapshotJson = json; return this; }
         public Builder createdAt(Instant createdAt) { this.createdAt = createdAt; return this; }
         public Builder updatedAt(Instant updatedAt) { this.updatedAt = updatedAt; return this; }
+        public Builder identityPolicy(String policy) { this.identityPolicy = policy; return this; }
+        public Builder workspaceRevision(long revision) { this.workspaceRevision = revision; return this; }
 
         public Session build() {
-            return new Session(id, name, sqlText, dialect, connectionId, fragmentTreeJson, workspaceSnapshotJson, createdAt, updatedAt);
+            return new Session(id, name, sqlText, dialect, connectionId, fragmentTreeJson, workspaceSnapshotJson, createdAt, updatedAt,
+                identityPolicy,workspaceRevision);
         }
     }
 }

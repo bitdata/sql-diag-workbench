@@ -33,6 +33,21 @@ import static org.mockito.Mockito.when;
  * {@link ConnectionService#TEST_CONNECT_TIMEOUT_MS} / {@link ConnectionService#WORKLOAD_CONNECT_TIMEOUT_MS}.
  */
 class ConnectionServiceTest {
+    @Test void diagnosticDeadlineIncludesCredentialLookupAndRetainsLeaseUntilLateWorkerExits() throws Exception {
+        var store=mock(ConnectionStore.class);var keychain=mock(KeychainStore.class);var leases=new WorkloadLeaseManager();
+        var entered=new CountDownLatch(1);var release=new CountDownLatch(1);var connections=new java.util.concurrent.atomic.AtomicInteger();
+        when(store.findById("conn-1")).thenReturn(Optional.of(config()));
+        when(keychain.retrieve("conn-1")).thenAnswer(i->{entered.countDown();while(release.getCount()>0){try{release.await();}catch(InterruptedException ignored){}}return "secret";});
+        var service=new ConnectionService(store,keychain,DatabaseStrategyFactory.withBuiltinStrategies(),(url,user,password)->{connections.incrementAndGet();return mock(Connection.class);},300,300,leases);
+        try {
+            long start=System.nanoTime();assertThrows(ConnectTimeoutException.class,()->service.openJdbcConnectionWithTimeout("conn-1",ConnectionIdentity.revision(config()),100));
+            assertTrue(entered.await(1,TimeUnit.SECONDS));assertTrue(TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-start)<1500);
+            assertEquals(1,leases.snapshot().ordinaryTickets());assertThrows(WorkloadBusyException.class,leases::acquireExclusive);
+            release.countDown();long end=System.nanoTime()+TimeUnit.SECONDS.toNanos(2);
+            while(leases.snapshot().ordinaryTickets()>0&&System.nanoTime()<end)Thread.sleep(5);
+            assertEquals(0,connections.get());assertEquals(0,leases.snapshot().ordinaryTickets());
+        } finally {release.countDown();leases.close();}
+    }
 
     @Test void pinnedConfigurationChecksBeforeCredentialsAndDoesNotRereadAfterCredentialLookup() throws Exception {
         var store=mock(ConnectionStore.class);var keychain=mock(KeychainStore.class);var captured=config();

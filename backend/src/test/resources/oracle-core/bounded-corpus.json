@@ -1,0 +1,566 @@
+{
+  "source": "G1k immutable finite parser/identity evidence; no JDBC",
+  "parser": [
+    {
+      "id": "number-bare",
+      "sql": "SELECT CAST(1 AS NUMBER) AS n FROM dual",
+      "accepted": true
+    },
+    {
+      "id": "number-bounds",
+      "sql": "SELECT CAST(1 AS NUMBER(38,127)),CAST(1 AS NUMBER(1,-84)) FROM dual",
+      "accepted": true
+    },
+    {
+      "id": "varchar-byte",
+      "sql": "SELECT CAST('x' AS VARCHAR2(10 BYTE)) FROM dual",
+      "accepted": true
+    },
+    {
+      "id": "varchar-char",
+      "sql": "SELECT CAST('中' AS VARCHAR2(10 CHAR)) FROM dual",
+      "accepted": true
+    },
+    {
+      "id": "national",
+      "sql": "SELECT CAST(N'中''文' AS NVARCHAR2(10)) FROM dual",
+      "accepted": true
+    },
+    {
+      "id": "nested-cast",
+      "sql": "SELECT CAST(CAST(1 AS NUMBER(10,2)) AS VARCHAR2(10 CHAR)) FROM dual",
+      "accepted": true
+    },
+    {
+      "id": "case-comments",
+      "sql": "select cast(1 as number /* type */ (10,2)) as n from dual",
+      "accepted": true
+    },
+    {
+      "id": "multiline",
+      "sql": "SELECT\n CAST(N'中' AS\n NVARCHAR2(10)) AS n\nFROM dual",
+      "accepted": true
+    },
+    {
+      "id": "crlf-tab",
+      "sql": "SELECT\r\n\tCAST(N'中' AS NVARCHAR2(10)) AS n\r\nFROM dual",
+      "accepted": true
+    },
+    {
+      "id": "surrogate",
+      "sql": "SELECT N'😀中', CAST(N'文' AS NVARCHAR2(10)) FROM dual",
+      "accepted": true
+    },
+    {
+      "id": "literal-lookalike",
+      "sql": "SELECT 'CAST(x AS NUMBER(39)) seq.NEXTVAL N''x''' FROM dual",
+      "accepted": true
+    },
+    {
+      "id": "comment-lookalike",
+      "sql": "SELECT 1 /* CAST(x AS NUMBER(39)) seq.NEXTVAL */ FROM dual",
+      "accepted": true
+    },
+    {
+      "id": "quoted-column",
+      "sql": "SELECT \"seq\".\"NEXTVAL\" FROM dual \"seq\"",
+      "accepted": true
+    },
+    {
+      "id": "quoted-type-lookalike",
+      "sql": "SELECT \"NUMBER(39)\" FROM dual",
+      "accepted": true
+    },
+    {
+      "id": "set-type",
+      "sql": "SELECT CAST(1 AS NUMBER(10)) FROM dual UNION ALL SELECT CAST(2 AS NUMBER(10)) FROM dual",
+      "accepted": true
+    },
+    {
+      "id": "window-type",
+      "sql": "SELECT SUM(CAST(1 AS NUMBER(10))) OVER (ORDER BY dummy) FROM dual",
+      "accepted": true
+    },
+    {
+      "id": "with-type",
+      "sql": "WITH \"q\"(\"n\") AS (SELECT CAST(1 AS NUMBER(10)) FROM dual) SELECT \"n\" FROM \"q\"",
+      "accepted": true
+    },
+    {
+      "id": "national-linebreak",
+      "sql": "SELECT N'中\n文', N'中\t文' FROM dual",
+      "accepted": true
+    },
+    {
+      "id": "number-zero",
+      "sql": "SELECT CAST(1 AS NUMBER(0)) FROM dual",
+      "accepted": false
+    },
+    {
+      "id": "number-high",
+      "sql": "SELECT CAST(1 AS NUMBER(39)) FROM dual",
+      "accepted": false
+    },
+    {
+      "id": "scale-low",
+      "sql": "SELECT CAST(1 AS NUMBER(10,-85)) FROM dual",
+      "accepted": false
+    },
+    {
+      "id": "scale-high",
+      "sql": "SELECT CAST(1 AS NUMBER(10,128)) FROM dual",
+      "accepted": false
+    },
+    {
+      "id": "number-star",
+      "sql": "SELECT CAST(1 AS NUMBER(*,2)) FROM dual",
+      "accepted": false
+    },
+    {
+      "id": "varchar-zero",
+      "sql": "SELECT CAST('x' AS VARCHAR2(0)) FROM dual",
+      "accepted": false
+    },
+    {
+      "id": "varchar-high",
+      "sql": "SELECT CAST('x' AS VARCHAR2(4001)) FROM dual",
+      "accepted": false
+    },
+    {
+      "id": "national-high",
+      "sql": "SELECT CAST(N'x' AS NVARCHAR2(2001)) FROM dual",
+      "accepted": false
+    },
+    {
+      "id": "national-byte",
+      "sql": "SELECT CAST(N'x' AS NVARCHAR2(10 BYTE)) FROM dual",
+      "accepted": false
+    },
+    {
+      "id": "unterminated-comment",
+      "sql": "SELECT 1 /* CAST",
+      "accepted": false
+    },
+    {
+      "id": "unterminated-national",
+      "sql": "SELECT N'x FROM dual",
+      "accepted": false
+    },
+    {
+      "id": "sequence-next",
+      "sql": "SELECT seq.NEXTVAL FROM dual",
+      "accepted": false
+    },
+    {
+      "id": "sequence-current",
+      "sql": "SELECT seq.CURRVAL FROM dual",
+      "accepted": false
+    },
+    {
+      "id": "q-literal",
+      "sql": "SELECT q'[x]' FROM dual",
+      "accepted": false
+    },
+    {
+      "id": "double-colon",
+      "sql": "SELECT 1::int FROM dual",
+      "accepted": false
+    },
+    {
+      "id": "multi-statement",
+      "sql": "SELECT 1 FROM dual; SELECT 2 FROM dual",
+      "accepted": false
+    },
+    {
+      "id": "delete",
+      "sql": "DELETE FROM probe_table",
+      "accepted": false
+    },
+    {
+      "id": "for-update",
+      "sql": "SELECT dummy FROM dual FOR UPDATE",
+      "accepted": false
+    },
+    {
+      "id": "select-into",
+      "sql": "SELECT dummy INTO x FROM dual",
+      "accepted": false
+    }
+  ],
+  "oraclePairs": [
+    {
+      "id": "space-comment",
+      "expected": "same",
+      "leftSql": "select a from t",
+      "rightSql": "SELECT /* audited */ A FROM T"
+    },
+    {
+      "id": "upper-quote",
+      "expected": "same",
+      "leftSql": "SELECT a FROM t",
+      "rightSql": "SELECT \"A\" FROM \"T\""
+    },
+    {
+      "id": "parentheses",
+      "expected": "same",
+      "leftSql": "SELECT a FROM t WHERE a=1",
+      "rightSql": "SELECT a FROM t WHERE ((a=1))"
+    },
+    {
+      "id": "and-order",
+      "expected": "same",
+      "leftSql": "SELECT a FROM t WHERE a=1 AND b=2",
+      "rightSql": "SELECT a FROM t WHERE b=2 AND a=1"
+    },
+    {
+      "id": "or-order",
+      "expected": "same",
+      "leftSql": "SELECT a FROM t WHERE a=1 OR b=2",
+      "rightSql": "SELECT a FROM t WHERE b=2 OR a=1"
+    },
+    {
+      "id": "number-spelling",
+      "expected": "same",
+      "leftSql": "SELECT CAST(1 AS NUMBER(10,2)) n FROM dual",
+      "rightSql": "SELECT CAST(1 AS NUMBER(010,02)) n FROM DUAL"
+    },
+    {
+      "id": "quote-lower",
+      "expected": "different",
+      "leftSql": "SELECT a FROM t",
+      "rightSql": "SELECT \"a\" FROM t"
+    },
+    {
+      "id": "quote-mixed",
+      "expected": "different",
+      "leftSql": "SELECT \"MiX\" FROM t",
+      "rightSql": "SELECT MIX FROM t"
+    },
+    {
+      "id": "type-precision",
+      "expected": "different",
+      "leftSql": "SELECT CAST(1 AS NUMBER(10,2)) n FROM dual",
+      "rightSql": "SELECT CAST(1 AS NUMBER(11,2)) n FROM dual"
+    },
+    {
+      "id": "type-scale",
+      "expected": "different",
+      "leftSql": "SELECT CAST(1 AS NUMBER(10,2)) n FROM dual",
+      "rightSql": "SELECT CAST(1 AS NUMBER(10,3)) n FROM dual"
+    },
+    {
+      "id": "char-byte",
+      "expected": "different",
+      "leftSql": "SELECT CAST('x' AS VARCHAR2(10 CHAR)) n FROM dual",
+      "rightSql": "SELECT CAST('x' AS VARCHAR2(10 BYTE)) n FROM dual"
+    },
+    {
+      "id": "char-default",
+      "expected": "different",
+      "leftSql": "SELECT CAST('x' AS VARCHAR2(10)) n FROM dual",
+      "rightSql": "SELECT CAST('x' AS VARCHAR2(10 CHAR)) n FROM dual"
+    },
+    {
+      "id": "national-plain",
+      "expected": "different",
+      "leftSql": "SELECT N'中文' n FROM dual",
+      "rightSql": "SELECT '中文' n FROM dual"
+    },
+    {
+      "id": "national-escaped",
+      "expected": "same",
+      "leftSql": "SELECT N'中''文' n FROM dual",
+      "rightSql": "select N'中''文' N from DUAL"
+    },
+    {
+      "id": "literal-case",
+      "expected": "different",
+      "leftSql": "SELECT 'x' FROM dual",
+      "rightSql": "SELECT 'X' FROM dual"
+    },
+    {
+      "id": "null-empty",
+      "expected": "different",
+      "leftSql": "SELECT NULL FROM dual",
+      "rightSql": "SELECT '' FROM dual"
+    },
+    {
+      "id": "union-all",
+      "expected": "different",
+      "leftSql": "SELECT 1 FROM dual UNION SELECT 1 FROM dual",
+      "rightSql": "SELECT 1 FROM dual UNION ALL SELECT 1 FROM dual"
+    },
+    {
+      "id": "comparison",
+      "expected": "different",
+      "leftSql": "SELECT a FROM t WHERE a=1",
+      "rightSql": "SELECT a FROM t WHERE a=2"
+    },
+    {
+      "id": "quoted-function",
+      "expected": "different",
+      "leftSql": "SELECT NVL(a,1) FROM t",
+      "rightSql": "SELECT \"nvl\"(a,1) FROM t"
+    },
+    {
+      "id": "qualified-function",
+      "expected": "different",
+      "leftSql": "SELECT NVL(a,1) FROM t",
+      "rightSql": "SELECT app.NVL(a,1) FROM t"
+    }
+  ],
+  "legacy": [
+    {
+      "dialect": "postgresql",
+      "sql": "SELECT 1",
+      "canonical": "[\"QUERY\",\"\",[[\"SELECT\",\"\",[[\"LIST\",\"\",[]],[\"LIST\",\"\",[[\"NUMERIC_LITERAL\",\"[true,\\\"1\\\"]\",[]]]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]]",
+      "id": "788f2e27dd54f86da105909e48987a59fd6f8f7d598e4ca0479d5bc6cbb70b4b",
+      "output": "SELECT 1"
+    },
+    {
+      "dialect": "postgresql",
+      "sql": "SELECT a FROM t WHERE a=1 AND b=2",
+      "canonical": "[\"QUERY\",\"\",[[\"SELECT\",\"\",[[\"LIST\",\"\",[]],[\"LIST\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"A\\\"]\",[]]]],[\"IDENT_COMPONENTS\",\"[\\\"T\\\"]\",[]],[\"CALL_AND\",\"\",[[\"OPERATOR\",\"\\\"AND\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"CALL_EQUALS\",\"\",[[\"OPERATOR\",\"\\\"=\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"IDENT_COMPONENTS\",\"[\\\"A\\\"]\",[]],[\"NUMERIC_LITERAL\",\"[true,\\\"1\\\"]\",[]]]],[\"CALL_EQUALS\",\"\",[[\"OPERATOR\",\"\\\"=\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"IDENT_COMPONENTS\",\"[\\\"B\\\"]\",[]],[\"NUMERIC_LITERAL\",\"[true,\\\"2\\\"]\",[]]]]]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]]",
+      "id": "84d3bfc843cfac9d0a320bab6d3ffe6b98daac311a99663df8c11293d7cd7c79",
+      "output": "SELECT A\r\nFROM T\r\nWHERE A = 1 AND B = 2"
+    },
+    {
+      "dialect": "postgresql",
+      "sql": "SELECT a FROM t WHERE b=2 AND a=1",
+      "canonical": "[\"QUERY\",\"\",[[\"SELECT\",\"\",[[\"LIST\",\"\",[]],[\"LIST\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"A\\\"]\",[]]]],[\"IDENT_COMPONENTS\",\"[\\\"T\\\"]\",[]],[\"CALL_AND\",\"\",[[\"OPERATOR\",\"\\\"AND\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"CALL_EQUALS\",\"\",[[\"OPERATOR\",\"\\\"=\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"IDENT_COMPONENTS\",\"[\\\"A\\\"]\",[]],[\"NUMERIC_LITERAL\",\"[true,\\\"1\\\"]\",[]]]],[\"CALL_EQUALS\",\"\",[[\"OPERATOR\",\"\\\"=\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"IDENT_COMPONENTS\",\"[\\\"B\\\"]\",[]],[\"NUMERIC_LITERAL\",\"[true,\\\"2\\\"]\",[]]]]]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]]",
+      "id": "84d3bfc843cfac9d0a320bab6d3ffe6b98daac311a99663df8c11293d7cd7c79",
+      "output": "SELECT A\r\nFROM T\r\nWHERE B = 2 AND A = 1"
+    },
+    {
+      "dialect": "postgresql",
+      "sql": "SELECT 'x' s FROM t",
+      "canonical": "[\"QUERY\",\"\",[[\"SELECT\",\"\",[[\"LIST\",\"\",[]],[\"LIST\",\"\",[[\"CALL_AS\",\"\",[[\"OPERATOR\",\"\\\"AS\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"CHAR_LITERAL\",\"[\\\"x\\\",null,null]\",[]],[\"IDENT_COMPONENTS\",\"[\\\"S\\\"]\",[]]]]]],[\"IDENT_COMPONENTS\",\"[\\\"T\\\"]\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]]",
+      "id": "297548bd03d8d65dcf14afd92085d37be03894be9ec43e3cd1517793b28a2343",
+      "output": "SELECT 'x' AS S\r\nFROM T"
+    },
+    {
+      "dialect": "postgresql",
+      "sql": "SELECT COUNT(*) c FROM t GROUP BY a HAVING COUNT(*)>1",
+      "canonical": "[\"QUERY\",\"\",[[\"SELECT\",\"\",[[\"LIST\",\"\",[]],[\"LIST\",\"\",[[\"CALL_AS\",\"\",[[\"OPERATOR\",\"\\\"AS\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"CALL_OTHER_FUNCTION\",\"\",[[\"FUNCTION\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"COUNT\\\"]\",[]]]],[\"ABSENT\",\"null\",[]],[\"IDENT_COMPONENTS\",\"[\\\"\\\"]\",[]]]],[\"IDENT_COMPONENTS\",\"[\\\"C\\\"]\",[]]]]]],[\"IDENT_COMPONENTS\",\"[\\\"T\\\"]\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"A\\\"]\",[]]]],[\"CALL_GREATER_THAN\",\"\",[[\"OPERATOR\",\"\\\"GREATER_THAN\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"CALL_OTHER_FUNCTION\",\"\",[[\"FUNCTION\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"COUNT\\\"]\",[]]]],[\"ABSENT\",\"null\",[]],[\"IDENT_COMPONENTS\",\"[\\\"\\\"]\",[]]]],[\"NUMERIC_LITERAL\",\"[true,\\\"1\\\"]\",[]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]]",
+      "id": "55cd18edf19ab6efd584b9db127abc2e6976da5e0541eda8cbc52dedb0eeb3e4",
+      "output": "SELECT COUNT(*) AS C\r\nFROM T\r\nGROUP BY A\r\nHAVING COUNT(*) > 1"
+    },
+    {
+      "dialect": "postgresql",
+      "sql": "WITH q(a) AS (SELECT 1) SELECT a FROM q",
+      "canonical": "[\"QUERY\",\"\",[[\"WITH\",\"\",[[\"LIST\",\"\",[[\"CTE\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"Q\\\"]\",[]],[\"LIST\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"A\\\"]\",[]]]],[\"LITERAL\",\"[\\\"BOOLEAN\\\",\\\"FALSE\\\"]\",[]],[\"QUERY\",\"\",[[\"SELECT\",\"\",[[\"LIST\",\"\",[]],[\"LIST\",\"\",[[\"NUMERIC_LITERAL\",\"[true,\\\"1\\\"]\",[]]]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]]]]]],[\"QUERY\",\"\",[[\"SELECT\",\"\",[[\"LIST\",\"\",[]],[\"LIST\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"A\\\"]\",[]]]],[\"IDENT_COMPONENTS\",\"[\\\"Q\\\"]\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]]",
+      "id": "61afded874dd6cab053feea234b6c36c31c806644b463595ec3e24b461027e07",
+      "output": "WITH Q (A) AS (SELECT 1) SELECT A\r\nFROM Q"
+    },
+    {
+      "dialect": "postgresql",
+      "sql": "SELECT a FROM t UNION ALL SELECT a FROM t",
+      "canonical": "[\"QUERY\",\"\",[[\"CALL_UNION\",\"\",[[\"OPERATOR\",\"\\\"UNION ALL\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"QUERY\",\"\",[[\"SELECT\",\"\",[[\"LIST\",\"\",[]],[\"LIST\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"A\\\"]\",[]]]],[\"IDENT_COMPONENTS\",\"[\\\"T\\\"]\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]],[\"QUERY\",\"\",[[\"SELECT\",\"\",[[\"LIST\",\"\",[]],[\"LIST\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"A\\\"]\",[]]]],[\"IDENT_COMPONENTS\",\"[\\\"T\\\"]\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]]",
+      "id": "59d05fd128cc5c3964460216567140099caba742c1c94d7851af7bdd5b7fe822",
+      "output": "SELECT A\r\nFROM T\r\nUNION ALL\r\nSELECT A\r\nFROM T"
+    },
+    {
+      "dialect": "postgresql",
+      "sql": "SELECT a FROM t ORDER BY a OFFSET 1 ROWS FETCH NEXT 2 ROWS ONLY",
+      "canonical": "[\"QUERY\",\"\",[[\"SELECT\",\"\",[[\"LIST\",\"\",[]],[\"LIST\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"A\\\"]\",[]]]],[\"IDENT_COMPONENTS\",\"[\\\"T\\\"]\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]]]],[\"LIST\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"A\\\"]\",[]]]],[\"NUMERIC_LITERAL\",\"[true,\\\"1\\\"]\",[]],[\"NUMERIC_LITERAL\",\"[true,\\\"2\\\"]\",[]]]]",
+      "id": "b33714e2799b7d6961948f514b27423b66f46ddf272897daddfaab6271f589fc",
+      "output": "SELECT A\r\nFROM T\r\nORDER BY A\r\nOFFSET 1 ROWS\r\nFETCH NEXT 2 ROWS ONLY"
+    },
+    {
+      "dialect": "postgresql",
+      "sql": "SELECT CAST(1 AS DECIMAL(10,2)) n FROM t",
+      "canonical": "[\"QUERY\",\"\",[[\"SELECT\",\"\",[[\"LIST\",\"\",[]],[\"LIST\",\"\",[[\"CALL_AS\",\"\",[[\"OPERATOR\",\"\\\"AS\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"CALL_CAST\",\"\",[[\"OPERATOR\",\"\\\"CAST\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"NUMERIC_LITERAL\",\"[true,\\\"1\\\"]\",[]],[\"TYPE_SPEC\",\"\",[[\"BASIC_TYPE\",\"[[\\\"DECIMAL\\\"],10,2,null]\",[]],[\"NULLABLE\",\"null\",[]],[\"TIMEZONE\",\"null\",[]]]]]],[\"IDENT_COMPONENTS\",\"[\\\"N\\\"]\",[]]]]]],[\"IDENT_COMPONENTS\",\"[\\\"T\\\"]\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]]",
+      "id": "1054750f5996ae37dde77de4effb64078c7567f1cf12617060c1a36a6331f7a2",
+      "output": "SELECT CAST(1 AS DECIMAL(10, 2)) AS N\r\nFROM T"
+    },
+    {
+      "dialect": "postgresql",
+      "sql": "SELECT a FROM t WHERE a IS NULL",
+      "canonical": "[\"QUERY\",\"\",[[\"SELECT\",\"\",[[\"LIST\",\"\",[]],[\"LIST\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"A\\\"]\",[]]]],[\"IDENT_COMPONENTS\",\"[\\\"T\\\"]\",[]],[\"CALL_IS_NULL\",\"\",[[\"OPERATOR\",\"\\\"IS NULL\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"IDENT_COMPONENTS\",\"[\\\"A\\\"]\",[]]]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]]",
+      "id": "f56fd89a2b64169e576508ae68843cbddb6ba627dac2091fdfa26326ede17e93",
+      "output": "SELECT A\r\nFROM T\r\nWHERE A IS NULL"
+    },
+    {
+      "dialect": "postgresql",
+      "sql": "SELECT a FROM t WHERE a IN (1,2)",
+      "canonical": "[\"QUERY\",\"\",[[\"SELECT\",\"\",[[\"LIST\",\"\",[]],[\"LIST\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"A\\\"]\",[]]]],[\"IDENT_COMPONENTS\",\"[\\\"T\\\"]\",[]],[\"CALL_IN\",\"\",[[\"OPERATOR\",\"\\\"IN\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"IDENT_COMPONENTS\",\"[\\\"A\\\"]\",[]],[\"LIST\",\"\",[[\"NUMERIC_LITERAL\",\"[true,\\\"1\\\"]\",[]],[\"NUMERIC_LITERAL\",\"[true,\\\"2\\\"]\",[]]]]]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]]",
+      "id": "b810b8762034b2053a6b8ae43d9cbcbfcc72d585b963b1c4ec1a4f7d130ad619",
+      "output": "SELECT A\r\nFROM T\r\nWHERE A IN (1, 2)"
+    },
+    {
+      "dialect": "postgresql",
+      "sql": "SELECT a FROM t WHERE a=1 OR b=2",
+      "canonical": "[\"QUERY\",\"\",[[\"SELECT\",\"\",[[\"LIST\",\"\",[]],[\"LIST\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"A\\\"]\",[]]]],[\"IDENT_COMPONENTS\",\"[\\\"T\\\"]\",[]],[\"CALL_OR\",\"\",[[\"OPERATOR\",\"\\\"OR\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"CALL_EQUALS\",\"\",[[\"OPERATOR\",\"\\\"=\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"IDENT_COMPONENTS\",\"[\\\"A\\\"]\",[]],[\"NUMERIC_LITERAL\",\"[true,\\\"1\\\"]\",[]]]],[\"CALL_EQUALS\",\"\",[[\"OPERATOR\",\"\\\"=\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"IDENT_COMPONENTS\",\"[\\\"B\\\"]\",[]],[\"NUMERIC_LITERAL\",\"[true,\\\"2\\\"]\",[]]]]]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]]",
+      "id": "848235b90530096bc1fb45838c832054aa2a107d3496836da29c7f7bec8b6b29",
+      "output": "SELECT A\r\nFROM T\r\nWHERE A = 1 OR B = 2"
+    },
+    {
+      "dialect": "mysql",
+      "sql": "SELECT 1",
+      "canonical": "[\"QUERY\",\"\",[[\"SELECT\",\"\",[[\"LIST\",\"\",[]],[\"LIST\",\"\",[[\"NUMERIC_LITERAL\",\"[true,\\\"1\\\"]\",[]]]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]]",
+      "id": "99eb402b45512be0960da67f8610e76a7602f9064977b8b8100a17724aee6aaa",
+      "output": "SELECT 1"
+    },
+    {
+      "dialect": "mysql",
+      "sql": "SELECT a FROM t WHERE a=1 AND b=2",
+      "canonical": "[\"QUERY\",\"\",[[\"SELECT\",\"\",[[\"LIST\",\"\",[]],[\"LIST\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"a\\\"]\",[]]]],[\"IDENT_COMPONENTS\",\"[\\\"t\\\"]\",[]],[\"CALL_AND\",\"\",[[\"OPERATOR\",\"\\\"AND\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"CALL_EQUALS\",\"\",[[\"OPERATOR\",\"\\\"=\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"IDENT_COMPONENTS\",\"[\\\"a\\\"]\",[]],[\"NUMERIC_LITERAL\",\"[true,\\\"1\\\"]\",[]]]],[\"CALL_EQUALS\",\"\",[[\"OPERATOR\",\"\\\"=\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"IDENT_COMPONENTS\",\"[\\\"b\\\"]\",[]],[\"NUMERIC_LITERAL\",\"[true,\\\"2\\\"]\",[]]]]]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]]",
+      "id": "c27aa331a7fb6d7691fd6762e2d1307cc3339971f60929d7498506ea46386c9f",
+      "output": "SELECT a\r\nFROM t\r\nWHERE a = 1 AND b = 2"
+    },
+    {
+      "dialect": "mysql",
+      "sql": "SELECT a FROM t WHERE b=2 AND a=1",
+      "canonical": "[\"QUERY\",\"\",[[\"SELECT\",\"\",[[\"LIST\",\"\",[]],[\"LIST\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"a\\\"]\",[]]]],[\"IDENT_COMPONENTS\",\"[\\\"t\\\"]\",[]],[\"CALL_AND\",\"\",[[\"OPERATOR\",\"\\\"AND\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"CALL_EQUALS\",\"\",[[\"OPERATOR\",\"\\\"=\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"IDENT_COMPONENTS\",\"[\\\"a\\\"]\",[]],[\"NUMERIC_LITERAL\",\"[true,\\\"1\\\"]\",[]]]],[\"CALL_EQUALS\",\"\",[[\"OPERATOR\",\"\\\"=\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"IDENT_COMPONENTS\",\"[\\\"b\\\"]\",[]],[\"NUMERIC_LITERAL\",\"[true,\\\"2\\\"]\",[]]]]]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]]",
+      "id": "c27aa331a7fb6d7691fd6762e2d1307cc3339971f60929d7498506ea46386c9f",
+      "output": "SELECT a\r\nFROM t\r\nWHERE b = 2 AND a = 1"
+    },
+    {
+      "dialect": "mysql",
+      "sql": "SELECT 'x' s FROM t",
+      "canonical": "[\"QUERY\",\"\",[[\"SELECT\",\"\",[[\"LIST\",\"\",[]],[\"LIST\",\"\",[[\"CALL_AS\",\"\",[[\"OPERATOR\",\"\\\"AS\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"CHAR_LITERAL\",\"[\\\"x\\\",null,null]\",[]],[\"IDENT_COMPONENTS\",\"[\\\"s\\\"]\",[]]]]]],[\"IDENT_COMPONENTS\",\"[\\\"t\\\"]\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]]",
+      "id": "109761853612bce7a8678394b99b931a8556385f6c411e66bc4bddfc03ba977a",
+      "output": "SELECT 'x' AS s\r\nFROM t"
+    },
+    {
+      "dialect": "mysql",
+      "sql": "SELECT COUNT(*) c FROM t GROUP BY a HAVING COUNT(*)>1",
+      "canonical": "[\"QUERY\",\"\",[[\"SELECT\",\"\",[[\"LIST\",\"\",[]],[\"LIST\",\"\",[[\"CALL_AS\",\"\",[[\"OPERATOR\",\"\\\"AS\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"CALL_OTHER_FUNCTION\",\"\",[[\"FUNCTION\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"COUNT\\\"]\",[]]]],[\"ABSENT\",\"null\",[]],[\"IDENT_COMPONENTS\",\"[\\\"\\\"]\",[]]]],[\"IDENT_COMPONENTS\",\"[\\\"c\\\"]\",[]]]]]],[\"IDENT_COMPONENTS\",\"[\\\"t\\\"]\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"a\\\"]\",[]]]],[\"CALL_GREATER_THAN\",\"\",[[\"OPERATOR\",\"\\\"GREATER_THAN\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"CALL_OTHER_FUNCTION\",\"\",[[\"FUNCTION\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"COUNT\\\"]\",[]]]],[\"ABSENT\",\"null\",[]],[\"IDENT_COMPONENTS\",\"[\\\"\\\"]\",[]]]],[\"NUMERIC_LITERAL\",\"[true,\\\"1\\\"]\",[]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]]",
+      "id": "969333610b9e69ba8ec5d0532cb73d8fcba4442bd6081eb39955a1541129339b",
+      "output": "SELECT COUNT(*) AS c\r\nFROM t\r\nGROUP BY a\r\nHAVING COUNT(*) > 1"
+    },
+    {
+      "dialect": "mysql",
+      "sql": "WITH q(a) AS (SELECT 1) SELECT a FROM q",
+      "canonical": "[\"QUERY\",\"\",[[\"WITH\",\"\",[[\"LIST\",\"\",[[\"CTE\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"q\\\"]\",[]],[\"LIST\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"a\\\"]\",[]]]],[\"LITERAL\",\"[\\\"BOOLEAN\\\",\\\"FALSE\\\"]\",[]],[\"QUERY\",\"\",[[\"SELECT\",\"\",[[\"LIST\",\"\",[]],[\"LIST\",\"\",[[\"NUMERIC_LITERAL\",\"[true,\\\"1\\\"]\",[]]]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]]]]]],[\"QUERY\",\"\",[[\"SELECT\",\"\",[[\"LIST\",\"\",[]],[\"LIST\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"a\\\"]\",[]]]],[\"IDENT_COMPONENTS\",\"[\\\"q\\\"]\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]]",
+      "id": "56701e254cc27a22fea778b9dac090a0a020ca90e091e9c6945a42a535324a33",
+      "output": "WITH q (a) AS (SELECT 1) SELECT a\r\nFROM q"
+    },
+    {
+      "dialect": "mysql",
+      "sql": "SELECT a FROM t UNION ALL SELECT a FROM t",
+      "canonical": "[\"QUERY\",\"\",[[\"CALL_UNION\",\"\",[[\"OPERATOR\",\"\\\"UNION ALL\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"QUERY\",\"\",[[\"SELECT\",\"\",[[\"LIST\",\"\",[]],[\"LIST\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"a\\\"]\",[]]]],[\"IDENT_COMPONENTS\",\"[\\\"t\\\"]\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]],[\"QUERY\",\"\",[[\"SELECT\",\"\",[[\"LIST\",\"\",[]],[\"LIST\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"a\\\"]\",[]]]],[\"IDENT_COMPONENTS\",\"[\\\"t\\\"]\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]]",
+      "id": "bda5397191a803754060473493b64af1c2f37d5026609b5ef17ca08d9d6380ac",
+      "output": "SELECT a\r\nFROM t\r\nUNION ALL\r\nSELECT a\r\nFROM t"
+    },
+    {
+      "dialect": "mysql",
+      "sql": "SELECT a FROM t ORDER BY a OFFSET 1 ROWS FETCH NEXT 2 ROWS ONLY",
+      "canonical": "[\"QUERY\",\"\",[[\"SELECT\",\"\",[[\"LIST\",\"\",[]],[\"LIST\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"a\\\"]\",[]]]],[\"IDENT_COMPONENTS\",\"[\\\"t\\\"]\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]]]],[\"LIST\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"a\\\"]\",[]]]],[\"NUMERIC_LITERAL\",\"[true,\\\"1\\\"]\",[]],[\"NUMERIC_LITERAL\",\"[true,\\\"2\\\"]\",[]]]]",
+      "id": "4e9e33580d9af70d18f85d8283de0d51005749aa4d42cd0e41f3147ba2b3635e",
+      "output": "SELECT a\r\nFROM t\r\nORDER BY a\r\nLIMIT 2\r\nOFFSET 1"
+    },
+    {
+      "dialect": "mysql",
+      "sql": "SELECT CAST(1 AS DECIMAL(10,2)) n FROM t",
+      "canonical": "[\"QUERY\",\"\",[[\"SELECT\",\"\",[[\"LIST\",\"\",[]],[\"LIST\",\"\",[[\"CALL_AS\",\"\",[[\"OPERATOR\",\"\\\"AS\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"CALL_CAST\",\"\",[[\"OPERATOR\",\"\\\"CAST\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"NUMERIC_LITERAL\",\"[true,\\\"1\\\"]\",[]],[\"TYPE_SPEC\",\"\",[[\"BASIC_TYPE\",\"[[\\\"DECIMAL\\\"],10,2,null]\",[]],[\"NULLABLE\",\"null\",[]],[\"TIMEZONE\",\"null\",[]]]]]],[\"IDENT_COMPONENTS\",\"[\\\"n\\\"]\",[]]]]]],[\"IDENT_COMPONENTS\",\"[\\\"t\\\"]\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]]",
+      "id": "d8219defed03e95c2e9fb71d7d017063a94b0428faf95d0aea49da3a535b4346",
+      "output": "SELECT CAST(1 AS DECIMAL(10, 2)) AS n\r\nFROM t"
+    },
+    {
+      "dialect": "mysql",
+      "sql": "SELECT a FROM t WHERE a IS NULL",
+      "canonical": "[\"QUERY\",\"\",[[\"SELECT\",\"\",[[\"LIST\",\"\",[]],[\"LIST\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"a\\\"]\",[]]]],[\"IDENT_COMPONENTS\",\"[\\\"t\\\"]\",[]],[\"CALL_IS_NULL\",\"\",[[\"OPERATOR\",\"\\\"IS NULL\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"IDENT_COMPONENTS\",\"[\\\"a\\\"]\",[]]]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]]",
+      "id": "7178b76575cd0afef1cf28c90199554c124b3902c98e5688a4ebbed174269335",
+      "output": "SELECT a\r\nFROM t\r\nWHERE a IS NULL"
+    },
+    {
+      "dialect": "mysql",
+      "sql": "SELECT a FROM t WHERE a IN (1,2)",
+      "canonical": "[\"QUERY\",\"\",[[\"SELECT\",\"\",[[\"LIST\",\"\",[]],[\"LIST\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"a\\\"]\",[]]]],[\"IDENT_COMPONENTS\",\"[\\\"t\\\"]\",[]],[\"CALL_IN\",\"\",[[\"OPERATOR\",\"\\\"IN\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"IDENT_COMPONENTS\",\"[\\\"a\\\"]\",[]],[\"LIST\",\"\",[[\"NUMERIC_LITERAL\",\"[true,\\\"1\\\"]\",[]],[\"NUMERIC_LITERAL\",\"[true,\\\"2\\\"]\",[]]]]]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]]",
+      "id": "098f879cc846480df12892be3690923f61dfa13eb619dae78b984bab5fea2a0d",
+      "output": "SELECT a\r\nFROM t\r\nWHERE a IN (1, 2)"
+    },
+    {
+      "dialect": "mysql",
+      "sql": "SELECT a FROM t WHERE a=1 OR b=2",
+      "canonical": "[\"QUERY\",\"\",[[\"SELECT\",\"\",[[\"LIST\",\"\",[]],[\"LIST\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"a\\\"]\",[]]]],[\"IDENT_COMPONENTS\",\"[\\\"t\\\"]\",[]],[\"CALL_OR\",\"\",[[\"OPERATOR\",\"\\\"OR\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"CALL_EQUALS\",\"\",[[\"OPERATOR\",\"\\\"=\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"IDENT_COMPONENTS\",\"[\\\"a\\\"]\",[]],[\"NUMERIC_LITERAL\",\"[true,\\\"1\\\"]\",[]]]],[\"CALL_EQUALS\",\"\",[[\"OPERATOR\",\"\\\"=\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"IDENT_COMPONENTS\",\"[\\\"b\\\"]\",[]],[\"NUMERIC_LITERAL\",\"[true,\\\"2\\\"]\",[]]]]]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]]",
+      "id": "47cb8032086c96a2589137cea1f6eef9b7424b79a9e995a110bb572a30437955",
+      "output": "SELECT a\r\nFROM t\r\nWHERE a = 1 OR b = 2"
+    },
+    {
+      "dialect": "sqlserver",
+      "sql": "SELECT 1",
+      "canonical": "[\"QUERY\",\"\",[[\"SELECT\",\"\",[[\"LIST\",\"\",[]],[\"LIST\",\"\",[[\"NUMERIC_LITERAL\",\"[true,\\\"1\\\"]\",[]]]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]]",
+      "id": "7c24f9528d1c12ee9e675fa7094cd05c72d27a029813e399fc51145e2985f8dd",
+      "output": "SELECT 1"
+    },
+    {
+      "dialect": "sqlserver",
+      "sql": "SELECT a FROM t WHERE a=1 AND b=2",
+      "canonical": "[\"QUERY\",\"\",[[\"SELECT\",\"\",[[\"LIST\",\"\",[]],[\"LIST\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"a\\\"]\",[]]]],[\"IDENT_COMPONENTS\",\"[\\\"t\\\"]\",[]],[\"CALL_AND\",\"\",[[\"OPERATOR\",\"\\\"AND\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"CALL_EQUALS\",\"\",[[\"OPERATOR\",\"\\\"=\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"IDENT_COMPONENTS\",\"[\\\"a\\\"]\",[]],[\"NUMERIC_LITERAL\",\"[true,\\\"1\\\"]\",[]]]],[\"CALL_EQUALS\",\"\",[[\"OPERATOR\",\"\\\"=\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"IDENT_COMPONENTS\",\"[\\\"b\\\"]\",[]],[\"NUMERIC_LITERAL\",\"[true,\\\"2\\\"]\",[]]]]]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]]",
+      "id": "290d4fb0ef045023f8410c855f45552a2efe130ddc0c90146c1eb366374926ff",
+      "output": "SELECT [a]\r\nFROM [t]\r\nWHERE [a] = 1 AND [b] = 2"
+    },
+    {
+      "dialect": "sqlserver",
+      "sql": "SELECT a FROM t WHERE b=2 AND a=1",
+      "canonical": "[\"QUERY\",\"\",[[\"SELECT\",\"\",[[\"LIST\",\"\",[]],[\"LIST\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"a\\\"]\",[]]]],[\"IDENT_COMPONENTS\",\"[\\\"t\\\"]\",[]],[\"CALL_AND\",\"\",[[\"OPERATOR\",\"\\\"AND\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"CALL_EQUALS\",\"\",[[\"OPERATOR\",\"\\\"=\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"IDENT_COMPONENTS\",\"[\\\"a\\\"]\",[]],[\"NUMERIC_LITERAL\",\"[true,\\\"1\\\"]\",[]]]],[\"CALL_EQUALS\",\"\",[[\"OPERATOR\",\"\\\"=\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"IDENT_COMPONENTS\",\"[\\\"b\\\"]\",[]],[\"NUMERIC_LITERAL\",\"[true,\\\"2\\\"]\",[]]]]]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]]",
+      "id": "290d4fb0ef045023f8410c855f45552a2efe130ddc0c90146c1eb366374926ff",
+      "output": "SELECT [a]\r\nFROM [t]\r\nWHERE [b] = 2 AND [a] = 1"
+    },
+    {
+      "dialect": "sqlserver",
+      "sql": "SELECT 'x' s FROM t",
+      "canonical": "[\"QUERY\",\"\",[[\"SELECT\",\"\",[[\"LIST\",\"\",[]],[\"LIST\",\"\",[[\"CALL_AS\",\"\",[[\"OPERATOR\",\"\\\"AS\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"CHAR_LITERAL\",\"[\\\"x\\\",null,null]\",[]],[\"IDENT_COMPONENTS\",\"[\\\"s\\\"]\",[]]]]]],[\"IDENT_COMPONENTS\",\"[\\\"t\\\"]\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]]",
+      "id": "bcb6b47178c844b3d4792792578185d17121291eddf4956dc86480b6aaadb718",
+      "output": "SELECT 'x' AS [s]\r\nFROM [t]"
+    },
+    {
+      "dialect": "sqlserver",
+      "sql": "SELECT COUNT(*) c FROM t GROUP BY a HAVING COUNT(*)>1",
+      "canonical": "[\"QUERY\",\"\",[[\"SELECT\",\"\",[[\"LIST\",\"\",[]],[\"LIST\",\"\",[[\"CALL_AS\",\"\",[[\"OPERATOR\",\"\\\"AS\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"CALL_OTHER_FUNCTION\",\"\",[[\"FUNCTION\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"COUNT\\\"]\",[]]]],[\"ABSENT\",\"null\",[]],[\"IDENT_COMPONENTS\",\"[\\\"\\\"]\",[]]]],[\"IDENT_COMPONENTS\",\"[\\\"c\\\"]\",[]]]]]],[\"IDENT_COMPONENTS\",\"[\\\"t\\\"]\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"a\\\"]\",[]]]],[\"CALL_GREATER_THAN\",\"\",[[\"OPERATOR\",\"\\\"GREATER_THAN\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"CALL_OTHER_FUNCTION\",\"\",[[\"FUNCTION\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"COUNT\\\"]\",[]]]],[\"ABSENT\",\"null\",[]],[\"IDENT_COMPONENTS\",\"[\\\"\\\"]\",[]]]],[\"NUMERIC_LITERAL\",\"[true,\\\"1\\\"]\",[]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]]",
+      "id": "f11f02131769bd9ea3eeaf3122b11a4ba40377257f41c24d6dfca48f60cd222c",
+      "output": "SELECT COUNT(*) AS [c]\r\nFROM [t]\r\nGROUP BY [a]\r\nHAVING COUNT(*) > 1"
+    },
+    {
+      "dialect": "sqlserver",
+      "sql": "WITH q(a) AS (SELECT 1) SELECT a FROM q",
+      "canonical": "[\"QUERY\",\"\",[[\"WITH\",\"\",[[\"LIST\",\"\",[[\"CTE\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"q\\\"]\",[]],[\"LIST\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"a\\\"]\",[]]]],[\"LITERAL\",\"[\\\"BOOLEAN\\\",\\\"FALSE\\\"]\",[]],[\"QUERY\",\"\",[[\"SELECT\",\"\",[[\"LIST\",\"\",[]],[\"LIST\",\"\",[[\"NUMERIC_LITERAL\",\"[true,\\\"1\\\"]\",[]]]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]]]]]],[\"QUERY\",\"\",[[\"SELECT\",\"\",[[\"LIST\",\"\",[]],[\"LIST\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"a\\\"]\",[]]]],[\"IDENT_COMPONENTS\",\"[\\\"q\\\"]\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]]",
+      "id": "6f71151b9a2b024f92c61da843ce084093ef44dc5e72f4eaf6b49a7915511a69",
+      "output": "WITH [q] ([a]) AS (SELECT 1) SELECT [a]\r\nFROM [q]"
+    },
+    {
+      "dialect": "sqlserver",
+      "sql": "SELECT a FROM t UNION ALL SELECT a FROM t",
+      "canonical": "[\"QUERY\",\"\",[[\"CALL_UNION\",\"\",[[\"OPERATOR\",\"\\\"UNION ALL\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"QUERY\",\"\",[[\"SELECT\",\"\",[[\"LIST\",\"\",[]],[\"LIST\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"a\\\"]\",[]]]],[\"IDENT_COMPONENTS\",\"[\\\"t\\\"]\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]],[\"QUERY\",\"\",[[\"SELECT\",\"\",[[\"LIST\",\"\",[]],[\"LIST\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"a\\\"]\",[]]]],[\"IDENT_COMPONENTS\",\"[\\\"t\\\"]\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]]",
+      "id": "36c8006b8c3ab54a88a562b3a20b97c634c934ce3314b901f44934746aab9d83",
+      "output": "SELECT [a]\r\nFROM [t]\r\nUNION ALL\r\nSELECT [a]\r\nFROM [t]"
+    },
+    {
+      "dialect": "sqlserver",
+      "sql": "SELECT a FROM t ORDER BY a OFFSET 1 ROWS FETCH NEXT 2 ROWS ONLY",
+      "canonical": "[\"QUERY\",\"\",[[\"SELECT\",\"\",[[\"LIST\",\"\",[]],[\"LIST\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"a\\\"]\",[]]]],[\"IDENT_COMPONENTS\",\"[\\\"t\\\"]\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]]]],[\"LIST\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"a\\\"]\",[]]]],[\"NUMERIC_LITERAL\",\"[true,\\\"1\\\"]\",[]],[\"NUMERIC_LITERAL\",\"[true,\\\"2\\\"]\",[]]]]",
+      "id": "1b081a5494b20ed58b045b052452e7fa11240a25b3e132546d7913e922fd11f3",
+      "output": "SELECT [a]\r\nFROM [t]\r\nORDER BY [a]\r\nOFFSET 1 ROWS\r\nFETCH NEXT 2 ROWS ONLY"
+    },
+    {
+      "dialect": "sqlserver",
+      "sql": "SELECT CAST(1 AS DECIMAL(10,2)) n FROM t",
+      "canonical": "[\"QUERY\",\"\",[[\"SELECT\",\"\",[[\"LIST\",\"\",[]],[\"LIST\",\"\",[[\"CALL_AS\",\"\",[[\"OPERATOR\",\"\\\"AS\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"CALL_CAST\",\"\",[[\"OPERATOR\",\"\\\"CAST\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"NUMERIC_LITERAL\",\"[true,\\\"1\\\"]\",[]],[\"TYPE_SPEC\",\"\",[[\"NATIVE_TYPE\",\"[\\\"DECIMAL\\\",[\\\"10\\\",\\\"2\\\"]]\",[]],[\"NULLABLE\",\"null\",[]],[\"TIMEZONE\",\"null\",[]]]]]],[\"IDENT_COMPONENTS\",\"[\\\"n\\\"]\",[]]]]]],[\"IDENT_COMPONENTS\",\"[\\\"t\\\"]\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]]",
+      "id": "840caf45f590e6d31340dbd0137f2038f4538e12d29f9d7b3c7496eaf6768ea3",
+      "output": "SELECT CAST(1 AS DECIMAL (10, 2)) AS [n]\r\nFROM [t]"
+    },
+    {
+      "dialect": "sqlserver",
+      "sql": "SELECT a FROM t WHERE a IS NULL",
+      "canonical": "[\"QUERY\",\"\",[[\"SELECT\",\"\",[[\"LIST\",\"\",[]],[\"LIST\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"a\\\"]\",[]]]],[\"IDENT_COMPONENTS\",\"[\\\"t\\\"]\",[]],[\"CALL_IS_NULL\",\"\",[[\"OPERATOR\",\"\\\"IS NULL\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"IDENT_COMPONENTS\",\"[\\\"a\\\"]\",[]]]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]]",
+      "id": "a1e677c87bc63c93a272e0887c5fb2ab76449447b76833a4663a811ede38f582",
+      "output": "SELECT [a]\r\nFROM [t]\r\nWHERE [a] IS NULL"
+    },
+    {
+      "dialect": "sqlserver",
+      "sql": "SELECT a FROM t WHERE a IN (1,2)",
+      "canonical": "[\"QUERY\",\"\",[[\"SELECT\",\"\",[[\"LIST\",\"\",[]],[\"LIST\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"a\\\"]\",[]]]],[\"IDENT_COMPONENTS\",\"[\\\"t\\\"]\",[]],[\"CALL_IN\",\"\",[[\"OPERATOR\",\"\\\"IN\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"IDENT_COMPONENTS\",\"[\\\"a\\\"]\",[]],[\"LIST\",\"\",[[\"NUMERIC_LITERAL\",\"[true,\\\"1\\\"]\",[]],[\"NUMERIC_LITERAL\",\"[true,\\\"2\\\"]\",[]]]]]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]]",
+      "id": "fe924404d8e5f2abc4cde66b3801f3f744c187b202193290765a1c988631d86a",
+      "output": "SELECT [a]\r\nFROM [t]\r\nWHERE [a] IN (1, 2)"
+    },
+    {
+      "dialect": "sqlserver",
+      "sql": "SELECT a FROM t WHERE a=1 OR b=2",
+      "canonical": "[\"QUERY\",\"\",[[\"SELECT\",\"\",[[\"LIST\",\"\",[]],[\"LIST\",\"\",[[\"IDENT_COMPONENTS\",\"[\\\"a\\\"]\",[]]]],[\"IDENT_COMPONENTS\",\"[\\\"t\\\"]\",[]],[\"CALL_OR\",\"\",[[\"OPERATOR\",\"\\\"OR\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"CALL_EQUALS\",\"\",[[\"OPERATOR\",\"\\\"=\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"IDENT_COMPONENTS\",\"[\\\"a\\\"]\",[]],[\"NUMERIC_LITERAL\",\"[true,\\\"1\\\"]\",[]]]],[\"CALL_EQUALS\",\"\",[[\"OPERATOR\",\"\\\"=\\\"\",[]],[\"ABSENT\",\"null\",[]],[\"IDENT_COMPONENTS\",\"[\\\"b\\\"]\",[]],[\"NUMERIC_LITERAL\",\"[true,\\\"2\\\"]\",[]]]]]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"LIST\",\"\",[]]]],[\"LIST\",\"\",[]],[\"ABSENT\",\"null\",[]],[\"ABSENT\",\"null\",[]]]]",
+      "id": "7609118d9c231f9543645a084fc9eb989febac4e142ac29f0864665ca78d323c",
+      "output": "SELECT [a]\r\nFROM [t]\r\nWHERE [a] = 1 OR [b] = 2"
+    }
+  ]
+}

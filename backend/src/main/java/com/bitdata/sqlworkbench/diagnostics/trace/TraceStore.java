@@ -23,6 +23,8 @@ public class TraceStore {
 
     private final Map<String, MutableTraceState> traces = new ConcurrentHashMap<>();
     private final java.util.function.LongSupplier ticker;
+    private final int capacity;
+    private volatile boolean accepting=true;
     // Driver cancellation may block indefinitely; it must never occupy the budget scheduler.
     private final ExecutorService budgetCancellation = new ThreadPoolExecutor(2, 2, 0L, TimeUnit.MILLISECONDS,
         new ArrayBlockingQueue<>(64), r -> {
@@ -39,22 +41,39 @@ public class TraceStore {
     }
 
     TraceStore(java.util.function.LongSupplier ticker) {
-        this.ticker=ticker;
+        this(ticker,256);
+    }
+    TraceStore(java.util.function.LongSupplier ticker,int capacity) {
+        if(capacity<1)throw new IllegalArgumentException("TRACE_CAPACITY_INVALID");
+        this.ticker=ticker;this.capacity=capacity;
         cleanup.scheduleAtFixedRate(this::removeExpired, 60, 60, TimeUnit.SECONDS);
     }
 
     @PreDestroy
-    public void shutdown() {
+    public synchronized void shutdown() {
+        accepting=false;
         traces.values().forEach(state -> { synchronized(state) { if(state.budgetFuture!=null) state.budgetFuture.cancel(false); } });
         cleanup.shutdownNow();
-        budgetCancellation.shutdownNow();
+        budgetCancellation.shutdown();
+        var discarded=new java.util.ArrayList<Runnable>();((ThreadPoolExecutor)budgetCancellation).getQueue().drainTo(discarded);
+        for(Runnable abandoned:discarded) {
+            if(abandoned instanceof OwnedSignal signal)signal.discard();
+        }
     }
 
     public String create(TraceRequest request) {
+        return create(request,null);
+    }
+    public synchronized String create(TraceRequest request,String dialect) {
+        if(!accepting)throw DiagnosticAdmission.failure(503,"TRACE_STORE_SHUTTING_DOWN");
+        removeExpired();
+        if(traces.size()>=capacity)throw DiagnosticAdmission.failure(429,"TRACE_OBSERVATION_CAPACITY_EXHAUSTED");
         String traceId = UUID.randomUUID().toString();
         MutableTraceState state=new MutableTraceState(traceId, request, ticker.getAsLong());
         traces.put(traceId, state);
-        if(request.mode()==TraceMode.CARDINALITY) synchronized(state) {
+        state.oracleBudget="oracle".equalsIgnoreCase(dialect);
+        state.overallBudget=request.mode()==TraceMode.CARDINALITY||"sqlserver".equals(dialect)||state.oracleBudget;
+        if(state.overallBudget) synchronized(state) {
             state.budgetFuture=cleanup.schedule(() -> expireBudget(traceId),120,TimeUnit.SECONDS);
         }
         return traceId;
@@ -63,7 +82,7 @@ public class TraceStore {
     public int remainingTimeout(String traceId, int requested) {
         MutableTraceState state=traces.get(traceId);
         if(state==null) return 1;
-        if(state.request.mode()!=TraceMode.CARDINALITY) return Math.max(1,requested);
+        if(!state.overallBudget) return Math.max(1,requested);
         long remaining=TimeUnit.SECONDS.toNanos(120)-(ticker.getAsLong()-state.startedNanos);
         if(remaining<=0) {
             expireBudget(traceId);
@@ -117,6 +136,7 @@ public class TraceStore {
     public boolean canExecute(String traceId) {
         MutableTraceState state = traces.get(traceId);
         if (state == null) return false;
+        if(state.oracleBudget && ticker.getAsLong()-state.startedNanos>=TimeUnit.SECONDS.toNanos(120)) expireBudget(traceId);
         synchronized (state) { return !state.status.isTerminal() && !state.cancelled; }
     }
 
@@ -174,13 +194,19 @@ public class TraceStore {
      * cancelTrace}）据此回 404——语义是「没有生效」而非「失败」。
      */
     public boolean cancel(String traceId) {
-        return stop(traceId,TraceStatus.CANCELLED,"Cancelled by user request",null);
+        return stop(traceId,TraceStatus.CANCELLED,"Cancelled by user request",null,true);
     }
 
     private boolean stop(String traceId, TraceStatus terminal, String message, String reason) {
         return stop(traceId, terminal, message, reason, false);
     }
 
+    void stopForShutdown() {
+        for(var state:traces.values()) {
+            String reason=state.status==TraceStatus.QUEUED?"TRACE_SHUTDOWN_BEFORE_START":"TRACE_SHUTDOWN_REQUESTED";
+            stop(state.traceId,TraceStatus.FAILED,"Trace stopped during application shutdown",reason,true);
+        }
+    }
     void expireBudget(String traceId) {
         stop(traceId,TraceStatus.FAILED,"Trace application budget exceeded","TRACE_BUDGET_EXCEEDED",true);
     }
@@ -189,16 +215,18 @@ public class TraceStore {
         MutableTraceState state = traces.get(traceId);
         if (state == null) return false;
         Statement active;
+        com.bitdata.sqlworkbench.connection.WorkloadLeaseManager.Ticket cancelOwner;
         synchronized (state) {
             if (state.status.isTerminal()) return false;
             state.cancelled = true;
             active=state.activeStatement;
+            cancelOwner=active!=null&&state.workerTicket!=null?state.workerTicket.retain():null;
             state.cancelSignal=new CancelSignal(active==null?"NOT_REQUIRED":"PENDING",null);
             state.publish(terminal,() -> { state.error=message; state.errorReason=reason; });
         }
         // Never hold the state lock across a driver cancellation call. Only this receipt can change after terminal.
         if(active!=null) {
-            Runnable signal = () -> {
+            Runnable invoke = () -> {
             try {
                 active.cancel();
                 synchronized(state) { state.cancelSignal=new CancelSignal("SENT",null); }
@@ -207,16 +235,37 @@ public class TraceStore {
                 synchronized(state) { state.cancelSignal=new CancelSignal("FAILED","CANCEL_SIGNAL_FAILED"); }
             }
             };
+            OwnedSignal signal=new OwnedSignal(invoke,cancelOwner,state);
             if (asynchronousSignal) {
                 try { budgetCancellation.execute(signal); }
                 catch (RejectedExecutionException e) {
                     synchronized(state) { state.cancelSignal=new CancelSignal("FAILED","CANCEL_SIGNAL_REJECTED"); }
+                    signal.discard("CANCEL_SIGNAL_REJECTED");
                 }
             } else signal.run();
         }
         return true;
     }
 
+    private static final class OwnedSignal implements Runnable {
+        final Runnable invoke;
+        final com.bitdata.sqlworkbench.connection.WorkloadLeaseManager.Ticket owner;
+        final MutableTraceState state;
+        final java.util.concurrent.atomic.AtomicBoolean claimed=new java.util.concurrent.atomic.AtomicBoolean();
+        OwnedSignal(Runnable invoke,com.bitdata.sqlworkbench.connection.WorkloadLeaseManager.Ticket owner,MutableTraceState state){this.invoke=invoke;this.owner=owner;this.state=state;}
+        public void run(){if(!claimed.compareAndSet(false,true))return;try{invoke.run();}finally{if(owner!=null)owner.release();}}
+        void discard(){discard("CANCEL_SIGNAL_NOT_SENT_SHUTDOWN");}
+        void discard(String reason){if(!claimed.compareAndSet(false,true))return;try{synchronized(state){state.cancelSignal=new CancelSignal("FAILED",reason);}}finally{if(owner!=null)owner.release();}}
+    }
+
+    /** Resource observation retained independently of task terminal status. */
+    public java.util.Map<String,Object> resourceObservation(String id) {
+        var state=traces.get(id);if(state==null)return java.util.Map.of("state","UNKNOWN","errorReason","TASK_OBSERVATION_UNAVAILABLE");
+        synchronized(state){return state.resources==null?
+            state.executionSealed&&state.status.isTerminal()?java.util.Map.of("state","CONFIRMED","errorReason","","confirmationBasis",state.noOwnerReason):
+                java.util.Map.of("state","UNKNOWN","errorReason","TASK_OWNER_NOT_REGISTERED"):
+            state.resources.snapshot(state.status.isTerminal());}
+    }
     public TraceProgress toProgress(String traceId) {
         MutableTraceState state = traces.get(traceId);
         if (state == null) return null;
@@ -243,16 +292,50 @@ public class TraceStore {
             state.evidence,
             state.request.mode(),
             state.request.mode()==TraceMode.CARDINALITY ? QuantityEvidence.summarize(state.request,state.rootId,state.status,stepsSnapshot,state.comparisons) : null,
-            state.cancelSignal
+            state.cancelSignal,
+            state.observationKind,
+            lifecycle(state)
         );
         }
     }
 
-    private void removeExpired() {
-        long now = System.currentTimeMillis();
+    private TraceLifecycle lifecycle(MutableTraceState state) {
+        if(!state.oracleBudget)return null;
+        var raw=resourceObservation(state.traceId);
+        String signal=state.cancelSignal==null?"NOT_REQUESTED":state.cancelSignal.state();
+        String observed=String.valueOf(raw.get("state"));
+        String cleanup=switch(observed) {
+            case "CONFIRMED" -> raw.containsKey("confirmationBasis")?"NO_RESOURCES":"CLOSED";
+            case "PENDING" -> "PENDING";
+            default -> state.status==TraceStatus.QUEUED?"NOT_STARTED":state.status.isTerminal()?"UNCONFIRMED":"PENDING";
+        };
+        boolean settled=state.status.isTerminal()&&(cleanup.equals("CLOSED")||cleanup.equals("NO_RESOURCES"))&&!signal.equals("PENDING");
+        String reason=raw.get("errorReason")==null?null:String.valueOf(raw.get("errorReason"));if("".equals(reason))reason=null;
+        if(reason==null&&state.cancelSignal!=null)reason=state.cancelSignal.errorReason();
+        boolean degraded=Boolean.TRUE.equals(raw.get("degraded"))||cleanup.equals("UNCONFIRMED")||Set.of("FAILED","REJECTED").contains(signal);
+        var signature=new java.util.ArrayList<Object>();signature.add(state.status);signature.add(state.errorReason);signature.add(signal);signature.add(cleanup);signature.add(reason);signature.add(raw);
+        if(!signature.equals(state.lifecycleSignature)){state.lifecycleRevision++;state.lifecycleSignature=signature;}
+        return new TraceLifecycle(1,state.lifecycleRevision,settled,signal,cleanup,reason,degraded,raw,"UNKNOWN","UNCONFIRMED");
+    }
+
+    void sealNeverStarted(String id,String reason) {
+        var state=traces.get(id);if(state==null)return;
+        synchronized(state){
+            if(state.workerTicket!=null||state.resources!=null)throw new IllegalStateException("OWNER_ALREADY_REGISTERED");
+            state.executionSealed=true;state.noOwnerReason=reason;
+        }
+    }
+    private synchronized void removeExpired() {
+        long now=ticker.getAsLong();
         traces.entrySet().removeIf(entry -> {
-            MutableTraceState state = entry.getValue();
-            return state.completedAt > 0 && (now - state.completedAt) > CLEANUP_DELAY_MS;
+            var state=entry.getValue();synchronized(state){
+                boolean confirmed=state.status.isTerminal()&&state.workerTicket==null
+                    &&(state.cancelSignal==null||!"PENDING".equals(state.cancelSignal.state()))
+                    &&"CONFIRMED".equals(resourceObservation(entry.getKey()).get("state"));
+                if(!confirmed){state.confirmedNanos=Long.MIN_VALUE;return false;}
+                if(state.confirmedNanos==Long.MIN_VALUE){state.confirmedNanos=now;return false;}
+                return now-state.confirmedNanos>=TimeUnit.MILLISECONDS.toNanos(CLEANUP_DELAY_MS);
+            }
         });
     }
 
@@ -263,6 +346,17 @@ public class TraceStore {
         final long startedAt;
         final long startedNanos;
         ScheduledFuture<?> budgetFuture;
+        long lifecycleRevision;
+        java.util.List<Object> lifecycleSignature;
+        boolean oracleBudget;
+        boolean overallBudget;
+        boolean executionSealed;
+        String noOwnerReason;
+        long confirmedNanos=Long.MIN_VALUE;
+        com.bitdata.sqlworkbench.connection.WorkloadLeaseManager.Ticket workerTicket;
+        TaskResources resources;
+        String connectionVersion;
+        String observationKind="GRAPH";
         CancelSignal cancelSignal;
         List<QuantityEvidence.Comparison> comparisons=List.of();
         final List<TraceStep> completedSteps = new ArrayList<>();

@@ -1,4 +1,5 @@
 import type { InvestigationSnapshot, ObservationReceipt, ReceiptSummary, SnapshotSummary } from '../types/investigation'
+import { validateOraclePlan } from './oraclePlanProtocol'
 import { decodeDiagnosticResponse } from './diagnosticResponse'
 import { decodePlanSqlMapping } from './planSqlMapping'
 import { resolveMappingEvidence, type MappingEvidenceSnapshot, type MappingPreviewSource } from './mappingTargets'
@@ -50,7 +51,8 @@ export function decodeObservationReceipt(raw: unknown, expectedId?: string): Obs
   if (!optionalText(p.sessionId) || !optionalText(p.sessionName) || !hash(p.submittedSqlSha256)
     || !date(p.capturedAt) || !date(p.createdAt) || !date(p.expiresAt) || typeof p.degraded !== 'boolean' || !optionalText(p.errorReason)
     || !['estimated', 'actual'].includes(String(p.requestedMode)) || !Array.isArray(capture.issues)) invalid()
-  for (const key of ['connectionId', 'sessionId', 'dialect', 'submittedSql', 'capturedAt', 'requestedMode']) if (p[key] !== capture[key]) invalid()
+  for (const key of ['connectionId', 'dialect', 'submittedSql', 'capturedAt', 'requestedMode']) if (p[key] !== capture[key]) invalid()
+  if (!optionalText(capture.sessionId) || (p.sessionId ?? null) !== (capture.sessionId ?? null)) invalid()
   if ((capture.issues as unknown[]).some(i => !object(i) || !text(i.code) || !optionalText(i.nodePath) || !text(i.message))) invalid()
   if (capture.details != null) {
     const d = requireObject(capture.details)
@@ -59,6 +61,7 @@ export function decodeObservationReceipt(raw: unknown, expectedId?: string): Obs
     for (const n of d.nodes as unknown[]) if (!object(n) || !text(n.sourcePath) || !optionalText(n.raw)) invalid()
   }
   plan(p.plan)
+  if (capture.dialect === 'oracle' || (object(capture.details) && capture.details.channel === 'ORACLE_PLAN_ROWS')) validateOraclePlan(p.plan, capture)
   return raw as ObservationReceipt
 }
 
@@ -70,7 +73,9 @@ export function decodeInvestigationSnapshot(raw: unknown, expectedId?: string): 
   if (c.sourceObservationId !== p.id || !text(annotation.title) || !annotation.title.trim()
     || !optionalText(annotation.hypothesis) || !optionalText(annotation.observation)) invalid()
   for (const key of ['executionId', 'connectionId', 'sessionId', 'sessionName', 'dialect', 'submittedSql', 'submittedSqlSha256', 'capturedAt', 'requestedMode'] as const)
-    if (source[key] !== p[key]) invalid()
+    if (key === 'sessionId' || key === 'sessionName'
+      ? !optionalText(source[key]) || (source[key] ?? null) !== (p[key] ?? null)
+      : source[key] !== p[key]) invalid()
   for (const key of ['workspace', 'diagnostics', 'mapping']) {
     const s = requireObject(c[key])
     if (!['AVAILABLE', 'DEGRADED', 'NOT_AVAILABLE'].includes(String(s.state)) || !optionalText(s.reason)

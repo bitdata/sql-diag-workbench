@@ -151,12 +151,10 @@ public class SqlPositionServiceTest {
     }
 
     @Test
-    void invalidSql_returnsEmptyList() {
+    void invalidSql_returnsObservableTypedRefusal() {
         String sql = "SELECT FROM invalid syntax";
-        List<SqlNodePosition> positions = service.extractPositions(sql, "postgresql");
-
-        // Should not throw, should return empty list
-        assertNotNull(positions);
+        var failure=assertThrows(SqlSerializationException.class,()->service.extractPositions(sql, "postgresql"));
+        assertEquals("SQL_POSITION_PARSE_UNSUPPORTED",failure.reason());
     }
 
     @Test

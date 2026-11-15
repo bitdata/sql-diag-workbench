@@ -37,13 +37,13 @@ class ComplexTaskSafetyTest {
     }
 
     @org.junit.jupiter.api.Test
-    void mysqlExecutionSpellingSurvivesWhileCanonicalIdentityStaysCompatible() throws Exception {
+    void mysqlExecutionSpellingAndConservativeCaseIdentityArePreserved() throws Exception {
         String sql="SELECT o.id FROM orders o JOIN tags t ON o.id=t.order_id";
         Batch b=run(sql,"mysql","join-split");
         assertEquals("COMPLETE",b.status());
         assertTrue(removed(b,"T").contains("FROM orders"));
         assertTrue(removed(b,"O").contains("FROM tags"));
-        assertEquals(com.bitdata.sqlworkbench.sql.diff.SqlCanonicalizer.canonicalizeSql(sql,"mysql"),
+        assertNotEquals(com.bitdata.sqlworkbench.sql.diff.SqlCanonicalizer.canonicalizeSql(sql,"mysql"),
             com.bitdata.sqlworkbench.sql.diff.SqlCanonicalizer.canonicalizeSql(sql.toUpperCase(java.util.Locale.ROOT),"mysql"));
     }
 

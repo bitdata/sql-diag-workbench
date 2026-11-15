@@ -16,6 +16,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @WebMvcTest(DiagnosticsController.class)
 class DiagnosticsControllerVerifyTest {
+    @org.springframework.boot.test.mock.mockito.MockBean
+    private com.bitdata.sqlworkbench.connection.ConnectionService connections;
 
     @MockBean com.bitdata.sqlworkbench.execution.ExecutionEngine executionEngine;
     @Autowired MockMvc mockMvc;

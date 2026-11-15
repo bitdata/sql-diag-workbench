@@ -59,8 +59,14 @@ public class EditClassifyController {
         String sessionId,
         String before,
         String after,
-        String dialect
-    ) {}
+        String dialect,
+        com.bitdata.sqlworkbench.session.IdentityContext identityContext,
+        java.util.List<com.bitdata.sqlworkbench.session.NodeProof> nodes
+    ) implements com.bitdata.sqlworkbench.session.IdentityBoundRequest {
+        public ClassifyRequest(String sessionId, String before, String after, String dialect) {
+            this(sessionId,before,after,dialect,null,null);
+        }
+    }
 
     public record ClassifyResponse(
         String action,                 // "NAVIGATE" or "EDIT"
@@ -103,8 +109,8 @@ public class EditClassifyController {
                 JsonNode root = mapper.readTree(session.fragmentTreeJson());
                 equivalentId = findEquivalent(root, canonical);
             } catch (Exception e) {
-                // Tree parse failure shouldn't block classification.
-                equivalentId = null;
+                return ResponseEntity.unprocessableEntity().body(Map.of("degraded",true,
+                    "code","WORKSPACE_TREE_INVALID","errorReason","WORKSPACE_TREE_INVALID"));
             }
         }
 

@@ -1,0 +1,349 @@
+[
+  {
+    "id": "count-star",
+    "sql": "SELECT COUNT_BIG(*) AS n FROM (VALUES(1),(1),(2),(CAST(NULL AS int))) AS v(x)",
+    "deterministicComparison": true,
+    "kind": "certification",
+    "expectedFirstRow": "4"
+  },
+  {
+    "id": "count-expression",
+    "sql": "SELECT COUNT_BIG(x) AS n FROM (VALUES(1),(1),(2),(CAST(NULL AS int))) AS v(x)",
+    "deterministicComparison": true,
+    "kind": "certification",
+    "expectedFirstRow": "3"
+  },
+  {
+    "id": "count-all",
+    "sql": "SELECT COUNT_BIG(ALL x) AS n FROM (VALUES(1),(1),(2),(CAST(NULL AS int))) AS v(x)",
+    "deterministicComparison": true,
+    "kind": "certification",
+    "expectedFirstRow": "3"
+  },
+  {
+    "id": "count-distinct",
+    "sql": "SELECT COUNT_BIG(DISTINCT x) AS n FROM (VALUES(1),(1),(2),(CAST(NULL AS int))) AS v(x)",
+    "deterministicComparison": true,
+    "kind": "certification",
+    "expectedFirstRow": "2"
+  },
+  {
+    "id": "count-empty",
+    "sql": "SELECT COUNT_BIG(*) AS n FROM (VALUES(1),(1),(2),(CAST(NULL AS int))) AS v(x) WHERE x>5",
+    "deterministicComparison": true,
+    "kind": "certification",
+    "expectedFirstRow": "0"
+  },
+  {
+    "id": "count-window",
+    "sql": "SELECT x,COUNT_BIG(x) OVER(PARTITION BY x) AS n FROM (VALUES(1),(1),(2),(CAST(NULL AS int))) AS v(x) ORDER BY x",
+    "deterministicComparison": true,
+    "kind": "certification",
+    "expectedFirstRow": null
+  },
+  {
+    "id": "count-window-order",
+    "sql": "SELECT x,COUNT_BIG(*) OVER(ORDER BY x ROWS UNBOUNDED PRECEDING) AS n FROM (VALUES(1),(1),(2),(CAST(NULL AS int))) AS v(x) ORDER BY x",
+    "deterministicComparison": true,
+    "kind": "certification",
+    "expectedFirstRow": null
+  },
+  {
+    "id": "count-cte",
+    "sql": "WITH a AS (SELECT COUNT_BIG(*) AS n FROM (VALUES(1),(1),(2),(CAST(NULL AS int))) AS v(x)) SELECT n FROM a",
+    "deterministicComparison": true,
+    "kind": "certification",
+    "expectedFirstRow": "4"
+  },
+  {
+    "id": "len",
+    "sql": "SELECT LEN(N'abc  ') AS n",
+    "deterministicComparison": true,
+    "kind": "certification",
+    "expectedFirstRow": null
+  },
+  {
+    "id": "len-null",
+    "sql": "SELECT LEN(CAST(NULL AS nvarchar(5))) AS n",
+    "deterministicComparison": true,
+    "kind": "certification",
+    "expectedFirstRow": null
+  },
+  {
+    "id": "charindex-2",
+    "sql": "SELECT CHARINDEX(N'b',N'abc') AS n",
+    "deterministicComparison": true,
+    "kind": "certification",
+    "expectedFirstRow": null
+  },
+  {
+    "id": "charindex-3",
+    "sql": "SELECT CHARINDEX(N'a',N'banana',3) AS n",
+    "deterministicComparison": true,
+    "kind": "certification",
+    "expectedFirstRow": null
+  },
+  {
+    "id": "concat-2",
+    "sql": "SELECT CONCAT(N'a',N'b') AS n",
+    "deterministicComparison": true,
+    "kind": "certification",
+    "expectedFirstRow": null
+  },
+  {
+    "id": "concat-null",
+    "sql": "SELECT CONCAT(NULL,N'b',NULL) AS n",
+    "deterministicComparison": true,
+    "kind": "certification",
+    "expectedFirstRow": null
+  },
+  {
+    "id": "checksum-1",
+    "sql": "SELECT CHECKSUM(1) AS n",
+    "deterministicComparison": true,
+    "kind": "certification",
+    "expectedFirstRow": null
+  },
+  {
+    "id": "checksum-3",
+    "sql": "SELECT CHECKSUM(1,2,3) AS n",
+    "deterministicComparison": true,
+    "kind": "certification",
+    "expectedFirstRow": null
+  },
+  {
+    "id": "hashbytes",
+    "sql": "SELECT HASHBYTES('SHA2_256','abc') AS n",
+    "deterministicComparison": true,
+    "kind": "certification",
+    "expectedFirstRow": null
+  },
+  {
+    "id": "hashbytes-null",
+    "sql": "SELECT HASHBYTES('SHA2_256',CAST(NULL AS varchar(3))) AS n",
+    "deterministicComparison": true,
+    "kind": "certification",
+    "expectedFirstRow": null
+  },
+  {
+    "id": "concat-254",
+    "sql": "SELECT CONCAT(N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x') AS n",
+    "deterministicComparison": true,
+    "kind": "certification",
+    "expectedFirstRow": null
+  },
+  {
+    "id": "getdate",
+    "sql": "SELECT GETDATE() AS n",
+    "deterministicComparison": false,
+    "kind": "certification",
+    "expectedFirstRow": null
+  },
+  {
+    "id": "newid",
+    "sql": "SELECT NEWID() AS n",
+    "deterministicComparison": false,
+    "kind": "certification",
+    "expectedFirstRow": null
+  },
+  {
+    "id": "sum",
+    "sql": "SELECT SUM(x) AS n FROM (VALUES(1),(1),(2),(CAST(NULL AS int))) AS v(x)",
+    "deterministicComparison": true,
+    "kind": "protection",
+    "expectedFirstRow": null
+  },
+  {
+    "id": "avg",
+    "sql": "SELECT AVG(CAST(x AS decimal(10,2))) AS n FROM (VALUES(1),(1),(2),(CAST(NULL AS int))) AS v(x)",
+    "deterministicComparison": true,
+    "kind": "protection",
+    "expectedFirstRow": null
+  },
+  {
+    "id": "json-value",
+    "sql": "SELECT JSON_VALUE(N'{\"k\":1}','$.k') AS n",
+    "deterministicComparison": true,
+    "kind": "protection",
+    "expectedFirstRow": null
+  },
+  {
+    "id": "try-convert",
+    "sql": "SELECT TRY_CONVERT(int,N'1') AS n",
+    "deterministicComparison": true,
+    "kind": "protection",
+    "expectedFirstRow": null
+  },
+  {
+    "id": "isnull",
+    "sql": "SELECT ISNULL(NULL,1) AS n",
+    "deterministicComparison": true,
+    "kind": "protection",
+    "expectedFirstRow": null
+  },
+  {
+    "id": "qualified",
+    "sql": "SELECT dbo.COUNT_BIG(1) AS n",
+    "deterministicComparison": true,
+    "kind": "preserve-only",
+    "expectedFirstRow": null,
+    "expectedOutput": "SELECT [dbo].[COUNT_BIG](1) AS [n]"
+  },
+  {
+    "id": "quoted",
+    "sql": "SELECT [COUNT_BIG](1) AS n",
+    "deterministicComparison": true,
+    "kind": "preserve-only",
+    "expectedFirstRow": null,
+    "expectedOutput": "SELECT [COUNT_BIG](1) AS [n]"
+  },
+  {
+    "id": "qualified-quoted",
+    "sql": "SELECT dbo.[MixedFn](1) AS n",
+    "deterministicComparison": true,
+    "kind": "preserve-only",
+    "expectedFirstRow": null,
+    "expectedOutput": "SELECT [dbo].[MixedFn](1) AS [n]"
+  },
+  {
+    "id": "unknown",
+    "sql": "SELECT UNKNOWN_FN(1) AS n",
+    "deterministicComparison": true,
+    "kind": "preserve-only",
+    "expectedFirstRow": null,
+    "expectedOutput": "SELECT [UNKNOWN_FN](1) AS [n]"
+  },
+  {
+    "id": "bad-count-zero",
+    "sql": "SELECT COUNT_BIG() AS n FROM (VALUES(1),(1),(2),(CAST(NULL AS int))) AS v(x)",
+    "deterministicComparison": true,
+    "kind": "reject",
+    "expectedFirstRow": null
+  },
+  {
+    "id": "bad-count-two",
+    "sql": "SELECT COUNT_BIG(1,2) AS n FROM (VALUES(1),(1),(2),(CAST(NULL AS int))) AS v(x)",
+    "deterministicComparison": true,
+    "kind": "reject",
+    "expectedFirstRow": null
+  },
+  {
+    "id": "bad-count-star-distinct",
+    "sql": "SELECT COUNT_BIG(DISTINCT *) AS n FROM (VALUES(1),(1),(2),(CAST(NULL AS int))) AS v(x)",
+    "deterministicComparison": true,
+    "kind": "reject",
+    "expectedFirstRow": null
+  },
+  {
+    "id": "bad-count-distinct-window",
+    "sql": "SELECT COUNT_BIG(DISTINCT x) OVER(PARTITION BY x) AS n FROM (VALUES(1),(1),(2),(CAST(NULL AS int))) AS v(x)",
+    "deterministicComparison": true,
+    "kind": "reject",
+    "expectedFirstRow": null
+  },
+  {
+    "id": "bad-len-zero",
+    "sql": "SELECT LEN() AS n FROM (VALUES(1),(1),(2),(CAST(NULL AS int))) AS v(x)",
+    "deterministicComparison": true,
+    "kind": "reject",
+    "expectedFirstRow": null
+  },
+  {
+    "id": "bad-len-two",
+    "sql": "SELECT LEN(1,2) AS n FROM (VALUES(1),(1),(2),(CAST(NULL AS int))) AS v(x)",
+    "deterministicComparison": true,
+    "kind": "reject",
+    "expectedFirstRow": null
+  },
+  {
+    "id": "bad-scalar-quantifier",
+    "sql": "SELECT LEN(DISTINCT x) AS n FROM (VALUES(1),(1),(2),(CAST(NULL AS int))) AS v(x)",
+    "deterministicComparison": true,
+    "kind": "reject",
+    "expectedFirstRow": null
+  },
+  {
+    "id": "bad-charindex-one",
+    "sql": "SELECT CHARINDEX(1) AS n FROM (VALUES(1),(1),(2),(CAST(NULL AS int))) AS v(x)",
+    "deterministicComparison": true,
+    "kind": "reject",
+    "expectedFirstRow": null
+  },
+  {
+    "id": "bad-charindex-four",
+    "sql": "SELECT CHARINDEX(1,2,3,4) AS n FROM (VALUES(1),(1),(2),(CAST(NULL AS int))) AS v(x)",
+    "deterministicComparison": true,
+    "kind": "reject",
+    "expectedFirstRow": null
+  },
+  {
+    "id": "bad-concat-one",
+    "sql": "SELECT CONCAT(1) AS n FROM (VALUES(1),(1),(2),(CAST(NULL AS int))) AS v(x)",
+    "deterministicComparison": true,
+    "kind": "reject",
+    "expectedFirstRow": null
+  },
+  {
+    "id": "bad-getdate-arg",
+    "sql": "SELECT GETDATE(1) AS n FROM (VALUES(1),(1),(2),(CAST(NULL AS int))) AS v(x)",
+    "deterministicComparison": true,
+    "kind": "reject",
+    "expectedFirstRow": null
+  },
+  {
+    "id": "bad-newid-arg",
+    "sql": "SELECT NEWID(1) AS n FROM (VALUES(1),(1),(2),(CAST(NULL AS int))) AS v(x)",
+    "deterministicComparison": true,
+    "kind": "reject",
+    "expectedFirstRow": null
+  },
+  {
+    "id": "bad-checksum-zero",
+    "sql": "SELECT CHECKSUM() AS n FROM (VALUES(1),(1),(2),(CAST(NULL AS int))) AS v(x)",
+    "deterministicComparison": true,
+    "kind": "reject",
+    "expectedFirstRow": null
+  },
+  {
+    "id": "bad-hashbytes-one",
+    "sql": "SELECT HASHBYTES('SHA2_256') AS n FROM (VALUES(1),(1),(2),(CAST(NULL AS int))) AS v(x)",
+    "deterministicComparison": true,
+    "kind": "reject",
+    "expectedFirstRow": null
+  },
+  {
+    "id": "bad-concat-255",
+    "sql": "SELECT CONCAT(N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x',N'x') AS n",
+    "deterministicComparison": true,
+    "kind": "reject",
+    "expectedFirstRow": null
+  },
+  {
+    "id": "checksum-4",
+    "sql": "SELECT CHECKSUM(1,2,3,4) AS n",
+    "deterministicComparison": true,
+    "kind": "certification",
+    "expectedFirstRow": null
+  },
+  {
+    "id": "checksum-16",
+    "sql": "SELECT CHECKSUM(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16) AS n",
+    "deterministicComparison": true,
+    "kind": "certification",
+    "expectedFirstRow": null
+  },
+  {
+    "id": "bad-qualified-star",
+    "sql": "SELECT COUNT_BIG(v.*) AS n FROM (VALUES(1)) AS v(x)",
+    "deterministicComparison": true,
+    "kind": "reject",
+    "expectedFirstRow": null
+  },
+  {
+    "id": "limited-checksum-star",
+    "sql": "SELECT CHECKSUM(*) AS n FROM (VALUES(1)) AS v(x)",
+    "deterministicComparison": true,
+    "kind": "reject",
+    "expectedFirstRow": null
+  }
+]

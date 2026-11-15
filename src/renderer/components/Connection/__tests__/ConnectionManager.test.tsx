@@ -1,0 +1,157 @@
+import { fireEvent, render, screen, waitFor, within, cleanup } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import ConnectionManager from '../ConnectionManager'
+import type { ConnectionConfig } from '../../../types/connection'
+
+const key = 'sql-workbench.recent-connection-ids'
+const connections: ConnectionConfig[] = Array.from({ length: 30 }, (_, n) => ({
+  id: `c${n}`, name: `Database ${n}`, host: `host${n}`, port: 1433,
+  database: `db${n}`, dialect: 'sqlserver', username: 'test', readonly: true,
+  createdAt: '', updatedAt: '',
+}))
+let storage: Map<string, string>
+const openMenu = () => fireEvent.keyDown(screen.getByRole('button', { name: 'Query connection' }), { key: 'Enter' })
+const props = () => ({ connections, selectedConnectionId: 'c29', onSelect: vi.fn(), onManage: vi.fn(), onEdit: vi.fn() })
+beforeEach(() => {
+  storage = new Map()
+  vi.stubGlobal('localStorage', { getItem: (k: string) => storage.get(k) ?? null, setItem: (k: string, v: string) => storage.set(k, v) })
+})
+afterEach(() => { cleanup(); vi.unstubAllGlobals() })
+
+describe('ConnectionManager bounded shortcuts', () => {
+  it('caps connection shortcuts at five while retaining the selected connection and management access', async () => {
+    render(<ConnectionManager {...props()} />)
+    openMenu()
+    const menu = await screen.findByRole('menu')
+    expect(within(menu).getAllByRole('menuitem').filter(item => item.querySelector('small'))).toHaveLength(5)
+    expect(within(menu).getByText('✓ Database 29')).toBeInTheDocument()
+    expect(within(menu).getByText('Manage connections…')).toBeInTheDocument()
+  })
+  it('offers searchable access to all connections and reuses edit and new callbacks', async () => {
+    const callbacks = props()
+    render(<ConnectionManager {...callbacks} />)
+    openMenu()
+    fireEvent.click(await screen.findByText('Manage connections…'))
+    const dialog = await screen.findByRole('dialog', { name: 'Manage connections' })
+    expect(callbacks.onManage).not.toHaveBeenCalled()
+    fireEvent.change(within(dialog).getByRole('searchbox'), { target: { value: 'host17' } })
+    expect(within(dialog).getByText('Database 17')).toBeInTheDocument()
+    expect(within(dialog).queryByText('Database 29')).not.toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Edit…' }))
+    expect(callbacks.onEdit).toHaveBeenCalledWith('c17')
+    openMenu()
+    fireEvent.click(await screen.findByText('Manage connections…'))
+    fireEvent.click(await screen.findByRole('button', { name: 'New Connection' }))
+    expect(callbacks.onManage).toHaveBeenCalledOnce()
+  })
+  it('restores recent ids, ignores removed ids and persists only bounded ids', async () => {
+    storage.set(key, JSON.stringify(['removed', 'c18', 'c12', 'c11', 'c10']))
+    render(<ConnectionManager {...props()} />)
+    await waitFor(() => expect(JSON.parse(storage.get(key)!).ids[0]).toBe('c29'))
+    openMenu()
+    const menu = await screen.findByRole('menu')
+    expect(within(menu).getByText('Database 18')).toBeInTheDocument()
+    fireEvent.click(within(menu).getByText('Database 18'))
+    expect(JSON.parse(storage.get(key)!).ids[0]).toBe('c18')
+    expect(JSON.parse(storage.get(key)!).ids).toHaveLength(5)
+    expect(storage.get(key)).not.toContain('host')
+  })
+  it('reports invalid storage instead of silently discarding history', async () => {
+    storage.set(key, '{broken')
+    render(<ConnectionManager {...props()} />)
+    openMenu()
+    fireEvent.click(await screen.findByText('Manage connections…'))
+    expect(await screen.findByRole('status')).toHaveTextContent('Recent connections could not be loaded')
+  })
+  it('shows loading instead of an empty list', async () => {
+    render(<ConnectionManager {...props()} connections={[]} loading />)
+    openMenu()
+    fireEvent.click(await screen.findByText('Manage connections…'))
+    const dialog = await screen.findByRole('dialog', { name: 'Manage connections' })
+    expect(within(dialog).getByRole('status')).toHaveTextContent('Loading connections')
+    expect(within(dialog).queryByText('No connections saved')).not.toBeInTheDocument()
+  })
+  it('distinguishes unavailable from empty and offers retry', async () => {
+    const retry = vi.fn()
+    const input = { ...props(), connections: [], error: 'Synthetic connection list unavailable', onRetry: retry }
+    const { rerender } = render(<ConnectionManager {...input} />)
+    openMenu()
+    fireEvent.click(await screen.findByText('Manage connections…'))
+    const dialog = await screen.findByRole('dialog', { name: 'Manage connections' })
+    expect(within(dialog).getByRole('alert')).toHaveTextContent(input.error)
+    expect(within(dialog).queryByText('No connections saved')).not.toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Retry loading' }))
+    expect(retry).toHaveBeenCalledOnce()
+    rerender(<ConnectionManager {...input} error={null} />)
+    expect(within(dialog).getByText('No connections saved')).toBeInTheDocument()
+  })
+  it('keeps stale rows reachable while a refresh error is visible', async () => {
+    const callbacks = props()
+    render(<ConnectionManager {...callbacks} error="Synthetic refresh failed" />)
+    openMenu()
+    fireEvent.click(await screen.findByText('Manage connections…'))
+    const dialog = await screen.findByRole('dialog', { name: 'Manage connections' })
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('Synthetic refresh failed')
+    fireEvent.change(within(dialog).getByRole('searchbox'), { target: { value: 'host17' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: /Database 17/ }))
+    expect(callbacks.onSelect).toHaveBeenCalledWith('c17')
+  })
+
+  it('orders management and shortcuts by the newest creation or visit, without pinning selection first', async () => {
+    const now = Date.now()
+    const list = connections.map((c, i) => ({ ...c, createdAt: new Date(now - 100000 - i).toISOString() }))
+    list[8] = { ...list[8], createdAt: new Date(now + 1000).toISOString() }
+    storage.set(key, JSON.stringify({ ids: ['c12', 'c29'], accessedAt: { c12: now + 2000, c29: now - 5000 } }))
+    render(<ConnectionManager {...props()} connections={list} />)
+    openMenu()
+    let menu = await screen.findByRole('menu')
+    const names = within(menu).getAllByRole('menuitem').filter(item => item.querySelector('small')).map(item => item.textContent)
+    expect(names[0]).toContain('Database 12')
+    expect(names[1]).toContain('Database 8')
+    expect(names.join()).toContain('Database 29')
+    fireEvent.click(within(menu).getByText('Manage connections…'))
+    const dialog = await screen.findByRole('dialog', { name: 'Manage connections' })
+    expect(within(dialog).getAllByRole('button', { pressed: false })[0]).toHaveTextContent('Database 12')
+  })
+  it('sorts newly added connections above older visits without hiding the current connection', async () => {
+    render(<ConnectionManager {...props()} connections={[...connections, { ...connections[0], id: 'new', name: 'New database', createdAt: new Date(Date.now() + 10000).toISOString() }]} />)
+    openMenu()
+    const rows = within(await screen.findByRole('menu')).getAllByRole('menuitem').filter(item => item.querySelector('small'))
+    expect(rows[0]).toHaveTextContent('New database')
+    expect(rows.some(row => row.textContent?.includes('Database 29'))).toBe(true)
+  })
+  it('confirms deletion inline, permits cancel and prevents duplicate submission', async () => {
+    let finish!: (ok: boolean) => void
+    const onDelete = vi.fn(() => new Promise<boolean>(resolve => { finish = resolve }))
+    render(<ConnectionManager {...props()} onDelete={onDelete} />)
+    openMenu()
+    fireEvent.click(await screen.findByText('Manage connections…'))
+    const dialog = await screen.findByRole('dialog', { name: 'Manage connections' })
+    fireEvent.change(within(dialog).getByRole('searchbox'), { target: { value: 'host17' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }))
+    expect(onDelete).not.toHaveBeenCalled()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    expect(onDelete).not.toHaveBeenCalled()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm delete' }))
+    expect(onDelete).toHaveBeenCalledExactlyOnceWith('c17')
+    expect(within(dialog).getByRole('button', { name: 'Deleting…' })).toBeDisabled()
+    finish(true)
+    await waitFor(() => expect(within(dialog).queryByText('Delete this saved connection?')).not.toBeInTheDocument())
+    expect(within(dialog).getByRole('searchbox')).toHaveFocus()
+  })
+  it.each([false, 'throw'])('retains the row and reports failed deletion (%s)', async outcome => {
+    const onDelete = vi.fn(async () => { if (outcome === 'throw') throw new Error('Synthetic deletion failed'); return false })
+    render(<ConnectionManager {...props()} onDelete={onDelete} />)
+    openMenu()
+    fireEvent.click(await screen.findByText('Manage connections…'))
+    const dialog = await screen.findByRole('dialog', { name: 'Manage connections' })
+    fireEvent.change(within(dialog).getByRole('searchbox'), { target: { value: 'host17' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm delete' }))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Could not delete saved connection.')
+    expect(within(dialog).getByRole('button', { name: /Database 17/ })).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Confirm delete' })).toBeEnabled()
+  })
+
+})

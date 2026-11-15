@@ -1,4 +1,4 @@
 # Local installer acceptance only. Public release signing remains a separate gate.
 extends: ./electron-builder.yml
 win:
-  signAndEditExecutable: false
+  signAndEditExecutable: true

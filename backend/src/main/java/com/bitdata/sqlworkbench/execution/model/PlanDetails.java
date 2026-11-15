@@ -5,7 +5,14 @@ import java.util.*;
 /** Additive, independently versioned evidence. Older captures have no details. */
 @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.ALWAYS)
 public record PlanDetails(int version,String channel,String rawPlan,String database,String databaseUser,
-        Map<String,String> settings,Metric planningTimeMs,Metric executionTimeMs,List<NodeEvidence> nodes,String errorReason) {
+        Map<String,String> settings,Metric planningTimeMs,Metric executionTimeMs,List<NodeEvidence> nodes,String errorReason,NativeEvidence nativeEvidence) {
+    public PlanDetails(int version,String channel,String rawPlan,String database,String databaseUser,Map<String,String> settings,Metric planningTimeMs,Metric executionTimeMs,List<NodeEvidence> nodes,String errorReason) {
+        this(version,channel,rawPlan,database,databaseUser,settings,planningTimeMs,executionTimeMs,nodes,errorReason,null);
+    }
+    public record NativeEvidence(int version,List<NativeNode> nodes,List<NativeQuery> queryStats) {}
+    public record NativeNode(String sourcePath,String physicalOp,String logicalOp,Map<String,String> attributes,Map<String,Metric> metrics,List<NativeThread> threads) {}
+    public record NativeThread(String sourcePath,String threadId,Map<String,Metric> metrics) {}
+    public record NativeQuery(String sourcePath,Map<String,Metric> metrics) {}
     public PlanDetails {settings=settings==null?Map.of():Map.copyOf(settings);nodes=nodes==null?List.of():List.copyOf(nodes);}
     @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.ALWAYS)
     public record NodeEvidence(String sourcePath,String raw,Metric firstRowMs) {}

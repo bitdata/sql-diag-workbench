@@ -1,9 +1,12 @@
+import { graphRequest } from '../utils/workspaceIdentity'
+import type { SessionWorkspaceState } from '../types/session'
 import { apiFetch } from '../utils/api'
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { SqlNodePosition, SqlPositionsResponse } from '../types/fragment'
 
 interface UseNodeSelectionOptions {
   backendUrl: string
+  workspace?: SessionWorkspaceState | null
   onSelectNode?: (nodeId: string | null) => void
 }
 
@@ -24,6 +27,7 @@ interface UseNodeSelectionResult {
 export function useNodeSelection({
   backendUrl,
   onSelectNode,
+  workspace,
 }: UseNodeSelectionOptions): UseNodeSelectionResult {
   const [positions, setPositions] = useState<SqlNodePosition[]>([])
   const [hoveredPosition, setHoveredPosition] = useState<SqlNodePosition | null>(null)
@@ -49,7 +53,7 @@ export function useNodeSelection({
       const response = await apiFetch(`${backendUrl}/api/sql/positions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sql, dialect }),
+        body: JSON.stringify({ sql, dialect, ...graphRequest(workspace) }),
         signal: controller.signal,
       })
 
@@ -75,7 +79,7 @@ export function useNodeSelection({
         setLoading(false)
       }
     }
-  }, [backendUrl])
+  }, [backendUrl, workspace?.sessionId, workspace?.identityPolicy, workspace?.workspaceRevision, workspace?.loadEpoch])
 
   const reset = useCallback(() => {
     abortRef.current?.abort()
@@ -86,6 +90,8 @@ export function useNodeSelection({
     setError(null)
     setLoading(false)
   }, [])
+
+  useEffect(() => { reset(); return () => abortRef.current?.abort() }, [reset, workspace?.sessionId, workspace?.identityPolicy, workspace?.dialect, workspace?.connectionId, workspace?.loadEpoch])
 
   const clearPositions = reset // Alias for backward compat
 

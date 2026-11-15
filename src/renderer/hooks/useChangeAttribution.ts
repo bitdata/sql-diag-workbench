@@ -1,3 +1,5 @@
+import { graphRequest } from '../utils/workspaceIdentity'
+import type { SessionWorkspaceState } from '../types/session'
 import { apiFetch } from '../utils/api'
 import { useEffect, useState, useRef } from 'react'
 import type { SqlDialect } from '../types/session'
@@ -5,6 +7,8 @@ import type { DiffMethod } from '../utils/diff'
 import { normalizeDiffMethod } from '../utils/diff'
 
 export interface ChangeOp {
+  comparisonKey?: string
+  displayScope?: 'AST_NODE' | 'WHOLE_SQL_CONTEXT'
   kind: 'ADD' | 'DEL' | 'MOD'
   nodeType: string
   path: string
@@ -40,7 +44,8 @@ export function useChangeAttribution(
   backendUrl: string | null,
   before: string,
   after: string,
-  dialect: SqlDialect
+  dialect: SqlDialect,
+  workspace?: SessionWorkspaceState | null
 ): State {
   const [state, setState] = useState<State>({
     ops: [],
@@ -89,16 +94,20 @@ export function useChangeAttribution(
 
     setState((s) => ({ ...s, loading: true, error: null }))
 
+    let context
+    try { context = graphRequest(workspace) } catch (e) {
+      setState({ ops: [], loading: false, error: String(e instanceof Error ? e.message : e), degraded: true, diffMethod: '' }); return
+    }
     apiFetch(`${backendUrl}/api/diff`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ before, after, dialect }),
+      body: JSON.stringify({ before, after, dialect, ...context }),
       signal: controller.signal,
     })
       .then((res) => {
         if (!res.ok) {
           return res.json().then((e) => {
-            throw new Error(e?.message ?? `HTTP ${res.status}`)
+            throw new Error(e?.errorReason ?? e?.message ?? `HTTP ${res.status}`)
           })
         }
         return res.json()
@@ -127,7 +136,7 @@ export function useChangeAttribution(
       })
 
     return () => controller.abort()
-  }, [backendUrl, before, after, dialect])
+  }, [backendUrl, before, after, dialect, workspace?.sessionId, workspace?.identityPolicy, workspace?.workspaceRevision, workspace?.loadEpoch])
 
   return state
 }

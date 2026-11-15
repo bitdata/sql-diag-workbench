@@ -57,16 +57,17 @@ public class ConnectedColumnResolver {
         final Connection connection;
         final DialectProfile profile;
         final boolean mysql;
+        final boolean oracle;
         final Map<String, List<String>> tables = new HashMap<>();
         final List<Issue> issues = new ArrayList<>();
         final long deadline = System.nanoTime() + 5_000_000_000L;
         Worker(Connection connection, DialectProfile profile, String dialect) {
-            this.connection = connection; this.profile = profile; this.mysql = "mysql".equalsIgnoreCase(dialect);
+            this.connection = connection; this.profile = profile; this.mysql = "mysql".equalsIgnoreCase(dialect); this.oracle="oracle".equalsIgnoreCase(dialect);
         }
         String key(SqlIdentifier id) {
             int i = id.names.size() - 1;
             String value = id.names.get(i);
-            return mysql || !id.isComponentQuoted(i) ? value.toLowerCase(Locale.ROOT) : value;
+            return oracle ? value : mysql || !id.isComponentQuoted(i) ? value.toLowerCase(Locale.ROOT) : value;
         }
         String columnKey(String name) { return mysql ? name.toLowerCase(Locale.ROOT) : name; }
         List<String> query(SqlNode n, Map<String, List<String>> ctes) throws SQLException {
@@ -111,7 +112,7 @@ public class ConnectedColumnResolver {
                     columns.add(key(id));
                 else if (item instanceof SqlIdentifier id && id.isStar()) {
                     List<Input> selected = inputs.stream().filter(in -> id.names.size() == 1 || key(in.alias).equals(
-                        mysql ? id.names.get(0).toLowerCase(Locale.ROOT) : id.names.get(0))).toList();
+                        oracle ? key(id.getComponent(0)) : mysql ? id.names.get(0).toLowerCase(Locale.ROOT) : id.names.get(0))).toList();
                     if (selected.isEmpty() || selected.stream().anyMatch(in -> in.columns == null)) return null;
                     for (Input in : selected) columns.addAll(in.columns);
                 } else return null; // Unnamed expressions have dialect-specific output names.

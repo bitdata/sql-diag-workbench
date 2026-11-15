@@ -1,4 +1,13 @@
+export interface IdentityContext {
+  sessionId: string
+  identityPolicy: string
+  workspaceRevision: number
+}
+
 export interface Session {
+  workspaceInstanceId?: string
+  identityPolicy?: string
+  workspaceRevision?: number
   id: string
   name: string
   sqlText: string
@@ -14,7 +23,11 @@ export type SqlDialect = 'postgresql' | 'mysql' | 'sqlserver' | 'oracle'
 
 /** Per-tab workspace state — the single source of truth for each tab's working context. */
 export interface SessionWorkspaceState {
+  workspaceInstanceId?: string
   // Identity
+  identityPolicy?: string
+  workspaceRevision?: number
+  readOnly?: boolean
   sessionId: string
   tabName: string
 
@@ -49,6 +62,8 @@ export interface SessionWorkspaceState {
    */
   viewerMode: 'input' | 'browse'
 }
+
+export interface DiagnosticContext extends IdentityContext { workspaceInstanceId: string }
 
 /** Application-level settings, shared across all tabs. Replaces PersistedSession. */
 export interface AppSettings {

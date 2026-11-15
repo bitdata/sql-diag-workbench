@@ -16,7 +16,9 @@ class ExecutionEngineRetentionTest {
         var service = mock(ConnectionService.class);
         var entered = new CountDownLatch(4);
         var release = new CountDownLatch(1);
+        Thread submitter = Thread.currentThread();
         when(service.getById(anyString())).thenAnswer(invocation -> {
+            if(Thread.currentThread()==submitter)return Optional.empty(); // submission snapshot must not block the worker fixture
             entered.countDown(); release.await(10, TimeUnit.SECONDS); return Optional.empty();
         });
         var engine = new ExecutionEngine(service, mock(ExplainServiceFactory.class), mock(DatabaseStrategyFactory.class),
@@ -38,14 +40,15 @@ class ExecutionEngineRetentionTest {
             assertNull(engine.getStatus(queued));assertNull(engine.getStatus(running.get(0)));
         } finally {release.countDown();engine.shutdown();}
     }
-    @Test void executorRejectionStillPublishesARetainedFailure() {
+    @Test void executorRejectionStillPublishesARetainedFailure() throws Exception {
         AtomicLong clock=new AtomicLong();var engine=engine(clock);
-        engine.shutdown();
+        var pool=ExecutionEngine.class.getDeclaredField("executor");pool.setAccessible(true);
+        ((ExecutorService)pool.get(engine)).shutdown(); // test pool rejection separately from the shutdown admission fence
         var id=engine.execute("SELECT 1","missing");
         assertEquals(ExecutionStatus.FAILED,engine.getStatus(id).status());
         clock.set(TimeUnit.MILLISECONDS.toNanos(299999));engine.removeExpired();
         assertNotNull(engine.getStatus(id));
-        clock.set(TimeUnit.MINUTES.toNanos(5));engine.removeExpired();assertNull(engine.getStatus(id));
+        clock.set(TimeUnit.MINUTES.toNanos(5));engine.removeExpired();assertNull(engine.getStatus(id));engine.shutdown();
     }
     private ExecutionEngine engine(AtomicLong clock) {
         return new ExecutionEngine(mock(ConnectionService.class), mock(ExplainServiceFactory.class),

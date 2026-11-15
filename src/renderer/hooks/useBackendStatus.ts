@@ -65,7 +65,7 @@ export function useBackendStatus() {
       } else if (event.status === 'starting') {
         setStatus({ status: 'DOWN' })
         setError(null)
-      } else if (event.status === 'stopped') {
+      } else if (event.status === 'stopping' || event.status === 'stopped') {
         setStatus({ status: 'DOWN' })
         setError(null)
       }

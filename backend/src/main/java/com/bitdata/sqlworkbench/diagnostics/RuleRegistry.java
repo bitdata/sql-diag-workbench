@@ -70,7 +70,13 @@ public class RuleRegistry {
         var plan=observation.result()==null?null:observation.result().plan();
         for(var rule:rules) {
             String reason=null; String status="EVALUATED";
-            switch(rule.id()) {
+            boolean oracle=observation.result()!=null && observation.result().planCapture()!=null && "oracle".equals(observation.result().planCapture().dialect());
+            if(oracle) {
+                if("expected-row-missing-at-source".equals(rule.id())){status="NOT_APPLICABLE";reason="TRACE_ONLY";}
+                else if(!"VERIFIED".equals(observation.sourceState())){status="SKIPPED";reason=observation.errorReason();}
+                else if("plan-investigation".equals(rule.id())){status="SKIPPED";reason="PARTIAL_EVALUATION";}
+                else {status="SKIPPED";reason="ORACLE_RULE_UNCERTIFIED";}
+            } else switch(rule.id()) {
                 case "expected-row-missing-at-source" -> { status="NOT_APPLICABLE"; reason="TRACE_ONLY"; }
                 case "expected-row-eliminated-at-filter", "expected-row-eliminated-at-join" -> { status="SKIPPED"; reason="PLAN_COUNTS_DO_NOT_PROVE_ROW_ELIMINATION"; }
                 case "join-amplification" -> { status="SKIPPED"; reason="INCOMPARABLE_OPERATOR_COUNTS"; }
@@ -91,6 +97,10 @@ public class RuleRegistry {
                 if(status.equals("EVALUATED") || "PARTIAL_EVALUATION".equals(reason)) {
                     var result=rule.analyze(fragment,plan,observation.result()==null?null:observation.result().timing());
                     if(result!=null) findings.addAll(result);
+                    if("plan-investigation".equals(rule.id()) && observation.result()!=null && observation.result().planCapture()!=null
+                        && "sqlserver".equals(observation.result().planCapture().dialect())) {
+                        status="SKIPPED";reason="PARTIAL_EVALUATION";
+                    }
                 }
             } catch(Exception failure) { status="FAILED"; reason="RULE_FAILED"; findings.add(failedRule(rule,fragment.id())); }
             coverage.add(new Evaluation.RuleEvaluation(rule.id(),status,reason));

@@ -14,7 +14,13 @@ export const defaultHandlers = [
     protectionReady: true, job: null, degraded: false,
   })),
   http.get('*/api/session-edit-links', () => HttpResponse.json([])),
-  http.put('*/api/sessions/:id/workspace', () => HttpResponse.json({})),
+  http.put('*/api/sessions/:id/workspace', async ({ request, params }) => {
+    const body = await request.json() as { identityContext?: { sessionId:string; identityPolicy:string; workspaceRevision:number } }
+    const context=body.identityContext
+    if (!context || context.sessionId !== params.id || context.identityPolicy !== 'structural-p0p1-v2' || !Number.isSafeInteger(context.workspaceRevision))
+      return HttpResponse.json({ degraded:true,code:'IDENTITY_CONTEXT_REQUIRED' }, {status:400})
+    return HttpResponse.json({ id:params.id,identityPolicy:context.identityPolicy,workspaceRevision:context.workspaceRevision+1 })
+  }),
   // ConnectionProvider → useConnections → GET /api/connections
   http.get('*/api/connections', () => {
     return HttpResponse.json([])

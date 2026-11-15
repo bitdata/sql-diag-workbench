@@ -14,6 +14,28 @@ public final class PlanEvidence {
     private static final ObjectMapper JSON=new ObjectMapper().enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS);
     public record Environment(String database,String databaseUser,Map<String,String> settings,String errorReason) {}
     private PlanEvidence() {}
+    public static Environment sqlServerEnvironment(Connection connection,int timeout) throws SQLException {
+        return sqlServerEnvironment(connection,timeout,()->{});
+    }
+    public static Environment sqlServerEnvironment(Connection connection,int timeout,Runnable checkpoint) throws SQLException {
+        String database=null,user=null;
+        try {
+            database=connection.getCatalog();user=connection.getMetaData().getUserName();
+            checkpoint.run();
+            try(var statement=connection.createStatement()) {
+                statement.setQueryTimeout(Math.max(1,Math.min(5,timeout)));
+                try(var row=statement.executeQuery("SELECT compatibility_level,collation_name,CONVERT(nvarchar(128),SERVERPROPERTY('ProductVersion')) AS product_version,CAST(SESSIONPROPERTY('ANSI_NULLS') AS int) AS ansi_nulls,CAST(SESSIONPROPERTY('QUOTED_IDENTIFIER') AS int) AS quoted_identifier,HAS_PERMS_BY_NAME(DB_NAME(),'DATABASE','SHOWPLAN') AS showplan_permission FROM sys.databases WHERE name=DB_NAME()")) {
+                    if(!row.next())return new Environment(database,user,Map.of(),"ENVIRONMENT_CAPTURE_PARTIAL");
+                    var values=new LinkedHashMap<String,String>();
+                    for(int i=1;i<=row.getMetaData().getColumnCount();i++) {String value=row.getString(i);if(value!=null)values.put(row.getMetaData().getColumnLabel(i),value);}
+                    return new Environment(database,user,Map.copyOf(values),database==null||user==null?"ENVIRONMENT_CAPTURE_PARTIAL":null);
+                }
+            }
+        } catch(SQLException failure) {
+            if(failure.getSQLState()!=null&&failure.getSQLState().startsWith("08"))throw failure;
+            return new Environment(database,user,Map.of(),"ENVIRONMENT_CAPTURE_FAILED");
+        }
+    }
     public static Environment environment(Connection connection,String dialect,int timeout) {
         String database=null,user=null;
         try {

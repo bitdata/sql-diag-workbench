@@ -93,7 +93,11 @@ export default function FragmentEditor({
   const handleFormat = useCallback(() => {
     try {
       const formatted = formatSql(editedSql, { dialect, tabWidth: 2, keywordCase: 'upper' })
-      setEditedSql(formatted)
+      if (!formatted.formatted) {
+        setError(tr(formatted.errorReason === 'ORACLE_FORMAT_UNSUPPORTED' ? 'Oracle formatting is unavailable. Original SQL retained.' : 'Failed to format SQL. Original SQL retained.'))
+        return
+      }
+      setEditedSql(formatted.sql)
       setError(null)
     } catch {
       setError(tr("Failed to format SQL"))

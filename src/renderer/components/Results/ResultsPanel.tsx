@@ -19,6 +19,7 @@ import './ResultsPanel.css'
 import InvestigationActions from '../Investigation/InvestigationActions'
 
 interface ResultsPanelProps {
+  prepareDiagnostic?: () => Promise<import('../../types/session').DiagnosticContext>
   provenance?: { sql: string; connectionId: string; dialect: string; connectionName: string; source: string }
   draftScope?: string
   result: ExecutionResult | null
@@ -83,6 +84,7 @@ export default function ResultsPanel({
   sessionId,
   checkMappingReveal,
   onMappingReveal,
+  prepareDiagnostic,
 }: ResultsPanelProps) {
   useLocale()
   // Even a caller with an obsolete receipt must not render it against a replacement plan.
@@ -91,10 +93,14 @@ export default function ResultsPanel({
     lifecycle: { ...diagnostics.lifecycle, status: 'idle', errorReason: 'DIAGNOSTICS_EXECUTION_MISMATCH' },
     verifyingIds: new Set(), verifyErrors: {},
   }
-  const [tab, setTab] = useState<Tab>(
-    mode === 'performance' ? DEFAULT_PERFORMANCE_TAB : DEFAULT_DATA_TAB
-  )
-  const [selection, setSelection] = useState<{ executionId: string; path: string } | null>(null)
+  const viewKey = JSON.stringify([sessionId, mode])
+  const [tabsByView, setTabsByView] = useState<Record<string, Tab>>({})
+  const tab = tabsByView[viewKey] ?? (mode === 'performance' ? DEFAULT_PERFORMANCE_TAB : DEFAULT_DATA_TAB)
+  const setTab = (next: Tab) => setTabsByView(prev => ({ ...prev, [viewKey]: next }))
+  const [selections, setSelections] = useState<Record<string, { executionId: string; path: string }>>({})
+  const selectionKey = JSON.stringify([sessionId, result?.executionId])
+  const selection = selections[selectionKey] ?? null
+  const setSelection = (next: { executionId: string; path: string }) => setSelections(prev => ({ ...prev, [selectionKey]: next }))
   const [mappingState, setMappingState] = useState<{ scope: string; value: PlanSqlMapping | null; snapshot: MappingPreviewSnapshot | null; error: string | null } | null>(null)
   const mappingGeneration = useRef(0)
   const planArea = useRef<HTMLDivElement>(null)
@@ -115,6 +121,10 @@ export default function ResultsPanel({
     const generation = ++mappingGeneration.current
     setMappingState(null)
     if (mode !== 'performance' || !backendUrl || !result?.executionId || !result.plan || !provenance?.sql || !provenance.connectionId) return
+    if (['sqlserver', 'oracle'].includes(result.planCapture?.dialect ?? provenance.dialect)) {
+      setMappingState({ scope: mappingScope, value: null, snapshot: null, error: (result.planCapture?.dialect ?? provenance.dialect) === 'oracle' ? 'ORACLE_PLAN_MAPPING_UNSUPPORTED' : 'SQLSERVER_PLAN_MAPPING_UNSUPPORTED' })
+      return
+    }
     let active = true
     void (async () => {
       let fragment: unknown = null
@@ -154,12 +164,7 @@ export default function ResultsPanel({
       planArea.current?.querySelector<HTMLElement>('.plan-node-details')?.focus()
   }, [tab, selection, result?.executionId])
 
-  // Reset to the default tab of the new mode whenever the user flips the
-  // mode toggle. The previous tab in the *other* mode is no longer
-  // visible, so re-applying it on a flip-back would feel arbitrary.
-  useEffect(() => {
-    setTab(mode === 'performance' ? DEFAULT_PERFORMANCE_TAB : DEFAULT_DATA_TAB)
-  }, [mode])
+  // Each session and mode retains its last results subtab.
 
   // Memoize so the Radix Tabs.List doesn't churn on every render — Radix
   // uses children identity to manage focus and keyboard nav.
@@ -206,6 +211,7 @@ export default function ResultsPanel({
         <pre>{provenance.sql}</pre><small>{tr("Connection ID:")}{" "}{provenance.connectionId}</small>
       </details>}
       {result?.historyPersistence?.status === 'failed' && <p role="alert" className="storage-warning">{tr("Query completed, but execution history could not be saved.")}{" "}{result.historyPersistence.errorReason}</p>}
+      {error && result && error !== result.error && <p role="alert" className="storage-warning">{tr(error)}</p>}
       {diagnostics?.reportPersistence?.status === 'failed' && <p role="alert" className="storage-warning">{tr("Diagnostics are available, but the report could not be saved.")}{" "}{diagnostics.reportPersistence.errorReason}</p>}
 
       {/* Render all four Tabs.Content nodes but let Radix hide the ones
@@ -221,7 +227,7 @@ export default function ResultsPanel({
           provenance={provenance} sessionId={sessionId ?? null} scope={draftScope ?? ''}
           fragmentTreeJson={fragmentTreeJson} diagnostics={diagnostics} loading={loading} />}
         <PlanView
-          key={result?.executionId ?? 'empty-plan'}
+          stateKey={selectionKey}
           selectedPath={selectedPath}
           onSelect={selectPlan}
           capture={result?.planCapture}
@@ -275,12 +281,16 @@ export default function ResultsPanel({
           <p className="placeholder-text">{tr("Row Trace not available")}</p>
         )}
         {rowTrace?.snapshot && rowTrace.submittedKeys?.length && backendUrl && connectionId && rowTrace.snapshot.connectionId === connectionId ?
-          <div key={JSON.stringify([connectionId, fragmentTreeJson, rowTrace.traceId])}>
+          <div key={JSON.stringify([draftScope, connectionId, fragmentTreeJson, rowTrace.traceId])}>
             <PhysicalSourcePanel backendUrl={backendUrl} connectionId={connectionId}
+              dialect={rowTrace.dialect}
+              prepareDiagnostic={prepareDiagnostic}
               fragmentTreeJson={rowTrace.snapshot.fragmentTreeJson} keys={rowTrace.submittedKeys} />
             <ComplexSourcePanel backendUrl={backendUrl} connectionId={connectionId}
+              dialect={rowTrace.dialect}
+              prepareDiagnostic={prepareDiagnostic}
               fragmentTreeJson={rowTrace.snapshot.fragmentTreeJson} keys={rowTrace.submittedKeys} />
-            <SourceVerificationPanel backendUrl={backendUrl} connectionId={connectionId} keys={rowTrace.submittedKeys} />
+            {rowTrace.dialect !== 'oracle' && <SourceVerificationPanel backendUrl={backendUrl} connectionId={connectionId} keys={rowTrace.submittedKeys} />}
           </div> : null}
       </Tabs.Content>
     </Tabs.Root>

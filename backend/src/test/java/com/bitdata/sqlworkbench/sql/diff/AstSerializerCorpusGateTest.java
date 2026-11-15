@@ -193,12 +193,11 @@ class AstSerializerCorpusGateTest {
         assertEquals(fallbackTexts.size(), new java.util.HashSet<>(fallbackTexts).size(),
             "兜底 token 必须内容可分（同型不同内容不得同文本）：" + fallbackTexts);
 
-        List<String> ids = new ArrayList<>();
         for (String sql : UNDISPATCHED_CORPUS) {
-            ids.add(com.bitdata.sqlworkbench.fragment.FragmentIdentity.computeId(canonical(sql), "postgresql"));
+            var form = SqlCanonicalizer.canonicalizeSqlWithStatus(sql,"postgresql");
+            assertTrue(form.degraded());
+            assertNull(form.canonicalSql(),"Unsupported SQL cannot acquire trusted identity: " + sql);
+            assertThrows(IllegalArgumentException.class, () -> canonical(sql));
         }
-        assertEquals(ids.size(), new java.util.HashSet<>(ids).size(),
-            "同型不同内容的未分派 SQL 必须身份可分"
-                + "（recon：旧实现兜底只带类名，`UPDATE t SET a = 1` 与 `UPDATE u SET b = 2` 同文本 ⇒ 碰撞）");
     }
 }

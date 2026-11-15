@@ -21,7 +21,8 @@ class SqlCanonicalizerDegradationTest {
         var form = SqlCanonicalizer.canonicalizeSqlWithStatus("UPDATE t SET a = 1", "postgresql");
         assertTrue(form.degraded());
         assertEquals(1, form.unsupportedNodeTypes().size());
-        assertTrue(form.unsupportedNodeTypes().get(0).startsWith("SqlUpdate#"),
+        assertNull(form.canonicalSql(),"Unsupported ASTs cannot establish trusted canonical content");
+        assertTrue(form.unsupportedNodeTypes().get(0).contains("SqlUpdate"),
             "报告的是兜底 token 的 canonicalText（类名 + 摘要），实际=" + form.unsupportedNodeTypes());
     }
 

@@ -144,13 +144,13 @@ public class JoinSplitRule implements DecompositionRule {
                 Set<String> origColNames = new LinkedHashSet<>();
                 for (SqlNode item : select.getSelectList()) {
                     if (item instanceof SqlIdentifier id && !id.isStar()) {
-                        origColNames.add(id.toString().toUpperCase());
+                        origColNames.add(safety.columnKey(id));
                     }
                 }
                 Set<String> newColNames = new LinkedHashSet<>();
                 for (SqlNode item : newSelectList) {
                     if (item instanceof SqlIdentifier id && !id.isStar()) {
-                        newColNames.add(id.toString().toUpperCase());
+                        newColNames.add(safety.columnKey(id));
                     }
                 }
                 int prunedCount = (int) origColNames.stream().filter(c -> !newColNames.contains(c)).count();
@@ -557,7 +557,7 @@ public class JoinSplitRule implements DecompositionRule {
         Set<String> existingCols = new LinkedHashSet<>();
         for (SqlNode item : selectList) {
             if (item instanceof SqlIdentifier id && !id.isStar()) {
-                existingCols.add(id.toString().toUpperCase());
+                existingCols.add(safety.columnKey(id));
             }
         }
 
@@ -568,7 +568,7 @@ public class JoinSplitRule implements DecompositionRule {
         for (SqlNode onCond : onConditions) {
             List<SqlIdentifier> columns = extractRemainingColumnsFromOn(safety, onCond, remainingAliases);
             for (SqlIdentifier col : columns) {
-                String colStr = col.toString().toUpperCase();
+                String colStr = safety.columnKey(col);
                 if (!existingCols.contains(colStr)) {
                     selectList.add(col);
                     existingCols.add(colStr);

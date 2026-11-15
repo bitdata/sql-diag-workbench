@@ -218,12 +218,13 @@ class FragmentNodeCanonicalizationErrorTest {
      * A future identity change (rejected for now, ruling 2) would surface here.
      */
     @Test
-    void sccFragmentId_matchesProbeMeasuredValue() throws Exception {
+    void sccFragmentId_doesNotReuseUnversionedIdentity() throws Exception {
         FragmentNode root = engine().build(parse(MUTUAL_RECURSIVE), "postgresql");
         FragmentNode scc = findScc(root);
         assertNotNull(scc);
-        assertEquals("48121708cbc57c2b68a0cf3ba92ed1ef14cd6f83d1d129b69c127329ee2a8ccc", scc.id(),
-            "identity must be unchanged from the task-4b measurement (flag-only)");
+        assertNotEquals("48121708cbc57c2b68a0cf3ba92ed1ef14cd6f83d1d129b69c127329ee2a8ccc", scc.id(),
+            "new policy must not alias an unversioned raw-fallback identity");
+        assertNotNull(scc.canonicalizationError(), "raw fallback remains observable and cannot prove a graph identity");
     }
 
     // ---- Step 3: SCC fragment is not claimable as runnable ----

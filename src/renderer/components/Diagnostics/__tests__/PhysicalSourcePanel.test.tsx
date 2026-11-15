@@ -4,18 +4,19 @@ import PhysicalSourcePanel from '../PhysicalSourcePanel'
 const mocks = vi.hoisted(() => ({ api: vi.fn(), trace: vi.fn(), cancel: vi.fn(), clear: vi.fn(), state: {} as Record<string, unknown> }))
 vi.mock('../../../utils/api', () => ({ apiFetch: mocks.api }))
 vi.mock('../../../hooks/useRowTrace', () => ({ useRowTrace: () => ({ status: 'idle', steps: [], trace: mocks.trace, cancel: mocks.cancel, clear: mocks.clear, ...mocks.state }) }))
-const props = { backendUrl: 'http://backend', connectionId: 'c1', fragmentTreeJson: JSON.stringify({ id: 'root', sqlFragment: 'SELECT parent AS invoice FROM sales_invoice_item' }),
+const context = { sessionId: 's', identityPolicy: 'structural-p0p1-v2', workspaceRevision: 1, workspaceInstanceId: 'a'.repeat(32) }
+const props = { prepareDiagnostic: async () => context, backendUrl: 'http://backend', connectionId: 'c1', fragmentTreeJson: JSON.stringify({ id: 'root', sqlFragment: 'SELECT parent AS invoice FROM sales_invoice_item', canonicalSql: 'canonical' }),
   keys: [{ column: 'invoice', type: 'TEXT' as const, value: 'INV-99' }] }
-const plan = () => ({ status: 'COMPLETED', verified: true, connectionId: 'c1', originalSql: 'SELECT parent AS invoice FROM sales_invoice_item', metadataSql: 'SELECT parent AS invoice FROM sales_invoice_item LIMIT 0',
+const plan = () => ({ sourceReceiptId: 'receipt-direct', status: 'COMPLETED', verified: true, connectionId: 'c1', originalSql: 'SELECT parent AS invoice FROM sales_invoice_item', metadataSql: 'SELECT parent AS invoice FROM sales_invoice_item LIMIT 0',
   schema: 'public', relation: 'sales_invoice_item', sourceSql: 'SELECT * FROM "public"."sales_invoice_item"', keys: [{ column: 'parent', type: 'TEXT', value: 'INV-99' }], observedAt: '2026-10-16T00:00:00Z' })
 beforeEach(() => { vi.clearAllMocks(); mocks.state = {}; mocks.api.mockResolvedValue({ ok: true, json: async () => plan() }) })
 it('binds the original query to verified mapped keys, preserving typed values', async () => {
   render(<PhysicalSourcePanel {...props} />); fireEvent.click(screen.getByText('Check query source'))
   await waitFor(() => expect(mocks.trace).toHaveBeenCalled())
-  expect(JSON.parse(mocks.api.mock.calls[0][1].body)).toEqual({ connectionId: 'c1', sql: plan().originalSql, keys: props.keys })
+  expect(JSON.parse(mocks.api.mock.calls[0][1].body)).toEqual({ connectionId: 'c1', sql: plan().originalSql, keys: props.keys, diagnosticContext: context, source: { id: 'root', sqlFragment: plan().originalSql, canonicalSql: 'canonical' } })
   const [id, tree, keys, options] = mocks.trace.mock.calls[0]
-  expect(id).toBe('c1'); expect(JSON.parse(tree).sqlFragment).toBe(plan().sourceSql); expect(keys).toEqual(plan().keys)
-  expect(options).toEqual({ mode: 'CARDINALITY', queryTimeoutSeconds: 5 })
+  expect(id).toBe('c1'); expect(tree).toBe(''); expect(keys).toEqual(plan().keys)
+  expect(options).toEqual({ mode: 'CARDINALITY', queryTimeoutSeconds: 30, diagnosticContext: context, sourceReceiptId: 'receipt-direct' })
 })
 it.each(['connection', 'sql', 'value', 'type'])('rejects a mismatched %s instead of accepting its source observation', async kind => {
   const data = plan()
@@ -39,6 +40,7 @@ it('ignores a late preparation response after cancellation and discloses server 
   let resolve!: (value: unknown) => void
   mocks.api.mockImplementation(() => new Promise(r => { resolve = r }))
   render(<PhysicalSourcePanel {...props} />); fireEvent.click(screen.getByText('Check query source'))
+  await waitFor(() => expect(mocks.api).toHaveBeenCalled())
   fireEvent.click(screen.getByText('Cancel physical source check'))
   await act(async () => resolve({ ok: true, json: async () => plan() }))
   expect(mocks.trace).not.toHaveBeenCalled(); expect(screen.getByText(/server request may still/)).toBeInTheDocument()
@@ -47,6 +49,7 @@ it('invalidates a late preparation when the query scope changes', async () => {
   let resolve!: (value: unknown) => void
   mocks.api.mockImplementation(() => new Promise(r => { resolve = r }))
   const view = render(<PhysicalSourcePanel {...props} />); fireEvent.click(screen.getByText('Check query source'))
+  await waitFor(() => expect(mocks.api).toHaveBeenCalled())
   view.rerender(<PhysicalSourcePanel {...props} fragmentTreeJson={JSON.stringify({ sqlFragment: 'SELECT 1' })} />)
   await act(async () => resolve({ ok: true, json: async () => plan() }))
   expect(mocks.trace).not.toHaveBeenCalled()

@@ -94,9 +94,10 @@ public class DecompositionRuleEngine {
         int failed=0;
         for (DecompositionRule rule : rules) {
             try {
-                RuleEvaluation evaluation=rule.evaluate(rootNode,dialect);
+                Batch evaluation=decomposeDetailed(rootNode,sqlToString(rootNode,dialect),dialect,rule.name(),null);
                 issues.addAll(evaluation.issues());
-                if (!evaluation.fragments().isEmpty() || !evaluation.issues().isEmpty())
+                if ("FAILED".equals(evaluation.status())) failed++;
+                if (!evaluation.children().isEmpty() || !evaluation.issues().isEmpty())
                     options.add(new DecomposeOption(rule.name(),rule.displayName(),rule.description(),rule.level()));
             } catch (Exception e) {
                 failed++;
@@ -114,6 +115,9 @@ public class DecompositionRuleEngine {
         String parentId=sourceId==null||sourceId.isBlank()?computeNodeId(sourceSql,dialect):sourceId;
         DecompositionRule rule=rules.stream().filter(r->r.name().equals(ruleName)).findFirst().orElse(null);
         if(rule==null) return new Batch("FAILED",List.of(),List.of(),List.of(new Issue("RULE_FAILED","Unknown rule",ruleName,"query",parentId,null)));
+        var sourceForm = com.bitdata.sqlworkbench.sql.diff.StructuralSqlCodec.canonicalize(sourceSql,dialect);
+        if (sourceForm.degraded()) return new Batch("FAILED",List.of(),List.of(),List.of(new Issue(
+            "SOURCE_CANONICAL_UNAVAILABLE",sourceForm.errorReason(),ruleName,"query",parentId,sourceSql)));
         try {
             RuleEvaluation evaluation=rule.evaluate(root,dialect);
             List<Issue> issues=new ArrayList<>(evaluation.issues());List<FragmentNode> children=new ArrayList<>();List<Output> outputs=new ArrayList<>();
@@ -122,11 +126,25 @@ public class DecompositionRuleEngine {
                 if(!df.executable()) { issues.add(new Issue("UNSUPPORTED_SCOPE",df.executionHint()==null?"Non-executable scope":df.executionHint(),ruleName,"query",null,df.sqlFragment()));continue; }
                 try {
                     SqlNode target=SqlParser.create(df.sqlFragment(),resolver.parserConfig(dialect)).parseQuery();
+                    String legality = "sqlserver".equalsIgnoreCase(dialect)
+                        ? com.bitdata.sqlworkbench.sql.tsql.TsqlQueryLegality.rejectionReason(target) : null;
+                    if (legality != null) {
+                        String scope = df.effect() != null && !df.effect().changes().isEmpty()
+                            ? df.effect().changes().get(0).scopePath() : "query/output["+(i+1)+"]";
+                        issues.add(new Issue(legality, "Candidate ordering/pagination is not independently executable",
+                            ruleName, scope, null, df.sqlFragment()));
+                        continue;
+                    }
                     if ("mysql".equalsIgnoreCase(dialect) && hasOffsetWithoutLimit(target)) {
                         issues.add(new Issue("UNSUPPORTED_SCOPE", "MySQL requires LIMIT with OFFSET; candidate was not emitted", ruleName, "query/output["+(i+1)+"]", null, df.sqlFragment()));
                         continue;
                     }
                     FragmentNode child=buildDecomposedNode(df,parentId,ruleName,String.valueOf(i),dialect);
+                    if (child.canonicalizationError() != null) {
+                        issues.add(new Issue("CANDIDATE_CANONICAL_UNAVAILABLE",child.canonicalizationError(),ruleName,
+                            "query/output["+(i+1)+"]",null,df.sqlFragment()));
+                        continue;
+                    }
                     if(child.id().equals(parentId)) { issues.add(new Issue("NO_EFFECT","Output has the source identity",ruleName,"query",parentId,df.sqlFragment()));continue; }
                     Effect effect=ExperimentEffects.describe(original,target,sourceSql,df.sqlFragment(),resolver.getProfile(dialect),df.effect());
                     children.add(child); outputs.add(new Output(parentId,ruleName,child.id(),i+1,effect));

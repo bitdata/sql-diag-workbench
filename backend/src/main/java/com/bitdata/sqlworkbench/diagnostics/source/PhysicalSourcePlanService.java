@@ -14,12 +14,20 @@ import java.util.concurrent.ForkJoinPool;
 /** Certifies one directly projected physical source. Never infers lineage through expressions. */
 @Service
 public class PhysicalSourcePlanService {
-    public record Request(String connectionId, String sql, List<KeyValue> keys) {}
+    public record Request(String connectionId, String sql, List<KeyValue> keys,DiagnosticContext diagnosticContext,
+                          com.bitdata.sqlworkbench.session.NodeProof source) {
+        public Request(String connectionId,String sql,List<KeyValue> keys){this(connectionId,sql,keys,null,null);}
+    }
     @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.ALWAYS)
     public record BoundKey(String column,Object value,KeyValue.Type type) {}
     public record Plan(String status, boolean verified, String errorReason, String connectionId,
         String originalSql, String metadataSql, String schema, String relation, String sourceSql,
-        List<BoundKey> keys, String observedAt) {}
+        List<BoundKey> keys, String observedAt,String sourceReceiptId) {
+        public Plan(String status,boolean verified,String errorReason,String connectionId,String originalSql,String metadataSql,
+                    String schema,String relation,String sourceSql,List<BoundKey> keys,String observedAt) {
+            this(status,verified,errorReason,connectionId,originalSql,metadataSql,schema,relation,sourceSql,keys,observedAt,null);
+        }
+    }
     private final ConnectionService connections;
     private final DatabaseStrategyFactory strategies;
     private final SqlDialectResolver resolver;

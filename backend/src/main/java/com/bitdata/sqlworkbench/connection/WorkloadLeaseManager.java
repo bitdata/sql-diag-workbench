@@ -103,7 +103,8 @@ public final class WorkloadLeaseManager {
 
     @PreDestroy
     public void close() {
-        cleanup.shutdownNow();
+        // Stop scheduling retries without interrupting a driver close already in progress.
+        cleanup.shutdown();
     }
 
     public static final class Ticket {
@@ -147,6 +148,7 @@ public final class WorkloadLeaseManager {
 
         public void markUnconfirmed(String reason) {
             synchronized (entry) {
+                entry.uncertainties.put(this,reason == null || reason.isBlank() ? "CONNECTION_CLEANUP_UNCONFIRMED" : reason);
                 entry.unconfirmed = true;
                 entry.errorReason = reason == null || reason.isBlank() ? "CONNECTION_CLEANUP_UNCONFIRMED" : reason;
             }
@@ -155,9 +157,10 @@ public final class WorkloadLeaseManager {
         public void clearUnconfirmed() {
             boolean notifyOwner = false;
             synchronized (entry) {
-                entry.unconfirmed = false;
-                entry.errorReason = null;
-                if (entry.references == 0 && !entry.released) {
+                entry.uncertainties.remove(this);
+                entry.unconfirmed = !entry.uncertainties.isEmpty();
+                entry.errorReason = entry.uncertainties.values().stream().findFirst().orElse(null);
+                if (entry.references == 0 && !entry.released && !entry.unconfirmed) {
                     entry.released = true;
                     notifyOwner = true;
                 }
@@ -165,6 +168,13 @@ public final class WorkloadLeaseManager {
             if (notifyOwner) owner.released(entry);
         }
 
+        /** Task-scoped resource facts; readable after this reference releases. */
+        public java.util.Map<String,Object> resourceSnapshot() {
+            synchronized(entry) {
+                return java.util.Map.of("references",entry.references,"entryReleased",entry.released,
+                    "unconfirmed",entry.unconfirmed,"reasons",entry.uncertainties.values().stream().sorted().toList());
+            }
+        }
         public synchronized boolean isReleased() { return released; }
     }
 
@@ -172,6 +182,7 @@ public final class WorkloadLeaseManager {
         final Kind kind;
         int references = 1;
         boolean released;
+        final java.util.Map<Ticket,String> uncertainties=new java.util.IdentityHashMap<>();
         boolean unconfirmed;
         String errorReason;
 

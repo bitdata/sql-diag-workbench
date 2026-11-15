@@ -82,7 +82,7 @@ public final class AstLcsDiffer {
             NodeToken a = e.getValue();
             if (b == null) {
                 ops.add(ChangeOp.add(a.nodeType(), a.path(), a.canonicalText()));
-            } else if (!b.canonicalText().equals(a.canonicalText())) {
+            } else if (!b.equals(a)) {
                 ops.add(ChangeOp.mod(a.nodeType(), a.path(), b.canonicalText(), a.canonicalText()));
             }
         }
@@ -147,6 +147,7 @@ public final class AstLcsDiffer {
         }
         Set<ChangeOp> merged = new HashSet<>();
         java.util.Set<ChangeOp> consumedAdds = new java.util.HashSet<>();
+        java.util.Set<ChangeOp> consumedDels = new java.util.HashSet<>();
         for (ChangeOp del : dels) {
             for (ChangeOp add : adds) {
                 if (consumedAdds.contains(add)) continue;
@@ -155,13 +156,17 @@ public final class AstLcsDiffer {
                     merged.add(ChangeOp.mod(add.nodeType(), del.path(),
                         del.oldText(), add.newText()));
                     consumedAdds.add(add);
+                    consumedDels.add(del);
                     break;
                 }
             }
         }
-        // 保留：未配对的 ADD + 原有 MOD
+        // Every unpaired occurrence survives, including deletions.
         for (ChangeOp op : raw) {
-            if (op.kind() == ChangeOp.Kind.DEL) continue;
+            if (op.kind() == ChangeOp.Kind.DEL) {
+                if (!consumedDels.contains(op)) merged.add(op);
+                continue;
+            }
             if (op.kind() == ChangeOp.Kind.ADD) {
                 if (!consumedAdds.contains(op)) merged.add(op);
                 continue;

@@ -1,3 +1,5 @@
+import { IDENTITY_POLICY, LEGACY_POLICY } from '../utils/workspaceIdentity'
+import type { IdentityContext } from '../types/session'
 import { useLocale, getLocale } from '../i18n'
 import { apiFetch } from '../utils/api'
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
@@ -54,9 +56,11 @@ const BACKEND_URL_UNAVAILABLE =
   'Backend URL unavailable — the app is running without a backend connection.'
 
 export interface OpenTabOptions {
+  mode?: WorkspaceMode
   connectionId?: string | null
   /** Continuation of an edit already started before exit was requested. */
   exitContinuation?: boolean
+  identityContext?: IdentityContext
   editOrigin?: Pick<EditLink, 'sourceSessionId' | 'sourceNodeId' | 'sourceTabName' | 'targetNodeId'>
   name?: string
   dialect?: string
@@ -66,12 +70,12 @@ export interface OpenTabOptions {
 }
 
 /** The serialized body is immutable across retries, including its operation identity. */
-export type TabCreationIntent = Readonly<{ body: string }>
+export type TabCreationIntent = Readonly<{ body: string; mode?: WorkspaceMode }>
 export function createTabIntent(sql: string, opts: OpenTabOptions = {}): TabCreationIntent {
-  return Object.freeze({ body: JSON.stringify({ creationRequestId: crypto.randomUUID(),
+  return Object.freeze({ mode: opts.mode, body: JSON.stringify({ creationRequestId: crypto.randomUUID(),
     workspaceProfileId: workspaceProfile().profileId,
     name: opts.name?.trim() || 'From history', sqlText: sql, dialect: opts.dialect ?? 'postgresql',
-    connectionId: opts.connectionId ?? null, fragmentTreeJson: null, editOrigin: opts.editOrigin }) })
+    connectionId: opts.connectionId ?? null, fragmentTreeJson: null, editOrigin: opts.editOrigin, identityContext: opts.identityContext }) })
 }
 class TabCreationError extends Error {
   constructor(message: string, readonly code?: string) { super(message) }
@@ -133,6 +137,9 @@ export interface UseTabsApi {
 
 /** Build a default workspace state for a newly created or hydrated tab. */
 function buildDefaultWorkspace(params: {
+  identityPolicy?: string
+  workspaceRevision?: number
+  workspaceInstanceId?: string
   sessionId: string
   name: string
   sql?: string
@@ -144,6 +151,10 @@ function buildDefaultWorkspace(params: {
 }): SessionWorkspaceState {
   const workspace: SessionWorkspaceState = {
     sessionId: params.sessionId,
+    identityPolicy: params.identityPolicy ?? LEGACY_POLICY,
+    workspaceRevision: params.workspaceRevision ?? 0,
+    workspaceInstanceId: params.workspaceInstanceId,
+    readOnly: params.identityPolicy !== IDENTITY_POLICY,
     tabName: params.name,
     sql: params.sql ?? '',
     isDirty: false,
@@ -296,7 +307,8 @@ export function useTabs(
                 connectionId: data.connectionId,
                 dialect: data.dialect,
                 fragmentTreeJson: data.fragmentTreeJson,
-                workspaceSnapshotJson: data.workspaceSnapshotJson,
+                identityPolicy: data.identityPolicy, workspaceRevision: data.workspaceRevision, workspaceInstanceId: data.workspaceInstanceId,
+          workspaceSnapshotJson: data.workspaceSnapshotJson,
                 lastSavedAt,
               }),
             })
@@ -428,16 +440,18 @@ export function useTabs(
           connectionId: created.connectionId,
           dialect: created.dialect,
           fragmentTreeJson: created.fragmentTreeJson,
+          identityPolicy: created.identityPolicy, workspaceRevision: created.workspaceRevision, workspaceInstanceId: created.workspaceInstanceId,
           workspaceSnapshotJson: created.workspaceSnapshotJson,
           lastSavedAt,
         }),
       }
+      if (intent.mode) tab.workspace.workspaceMode = intent.mode
       setTabs((prev) => closedSessions.current.has(tab.sessionId) || prev.some(t => t.sessionId === tab.sessionId) ? prev : [...prev, tab])
       setPersisted((p) => closedSessions.current.has(tab.sessionId) ? p : ({
         ...p,
         tabSessionIds: [...new Set([...p.tabSessionIds, tab.sessionId])],
         activeSessionId: tab.sessionId,
-        modeBySession: p.modeBySession ?? {},
+        modeBySession: { ...(p.modeBySession ?? {}), [tab.sessionId]: tab.workspace.workspaceMode },
       }))
       if (!onError) { recoveryRef.current = null; setBootError(null) }
       return tab.sessionId
@@ -636,6 +650,13 @@ export function useTabs(
       setTabs((prev) =>
         prev.map((tab) => {
           if (tab.sessionId !== sessionId) return tab
+          if (tab.workspace.readOnly) {
+            // Historical graph bytes and working SQL never become an autosave source.
+            return { ...tab, workspace: { ...tab.workspace,
+              selectedNodeId: partial.selectedNodeId ?? tab.workspace.selectedNodeId,
+              viewerMode: partial.viewerMode ?? tab.workspace.viewerMode,
+              workspaceMode: partial.workspaceMode ?? tab.workspace.workspaceMode } }
+          }
           const changed = Object.entries(partial).some(([key, value]) => key !== 'isDirty'
             && key !== 'syncStatus' && tab.workspace[key as keyof SessionWorkspaceState] !== value)
           if (!changed) return tab
@@ -654,12 +675,13 @@ export function useTabs(
     []
   )
 
-  const onSyncStatus = useCallback((id: string, payload: string, status: 'pending' | 'saved' | 'failed', error?: string) => {
+  const onSyncStatus = useCallback((id: string, payload: string, status: 'pending' | 'saved' | 'failed', error?: string, revision?: number) => {
     setTabs(prev => prev.map(t => {
-      if (t.sessionId !== id || workspacePayload(t.workspace) !== payload) return t
+      if (t.sessionId !== id) return t
+      if (workspacePayload(t.workspace) !== payload) return revision === undefined ? t : { ...t, workspace: { ...t.workspace, workspaceRevision: revision } }
       const clean = status === 'saved'
       return { ...t, isDirty: !clean, lastSavedAt: clean ? Date.now() : t.lastSavedAt,
-        workspace: { ...t.workspace, isDirty: !clean, syncStatus: status, syncError: error ?? null } }
+        workspace: { ...t.workspace, workspaceRevision: revision ?? t.workspace.workspaceRevision, isDirty: !clean, syncStatus: status, syncError: error ?? null } }
     }))
   }, [])
   const retrySave = useWorkspacePersistence(backendUrl, tabs, onSyncStatus)
@@ -696,6 +718,7 @@ export function useTabs(
       setTabs(prev => prev.map(t => t.sessionId === id ? { ...t, isDirty: false,
         workspace: { ...buildDefaultWorkspace({ sessionId: id, name: data.name, sql: data.sqlText,
           dialect: data.dialect, connectionId: data.connectionId, fragmentTreeJson: data.fragmentTreeJson,
+          identityPolicy: data.identityPolicy, workspaceRevision: data.workspaceRevision, workspaceInstanceId: data.workspaceInstanceId,
           workspaceSnapshotJson: data.workspaceSnapshotJson }), loadEpoch: (t.workspace.loadEpoch ?? 0) + 1 } } : t))
     } catch (e) {
       if (loadRequests.current.get(id) !== epoch) return

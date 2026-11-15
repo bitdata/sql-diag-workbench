@@ -1,7 +1,9 @@
+import { graphRequest } from '../../utils/workspaceIdentity'
+import { currentWorkspace } from '../../test/currentWorkspace'
 // src/renderer/hooks/__tests__/useFragmentTree.test.ts
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import { useFragmentTree } from '../useFragmentTree'
+import { useFragmentTree as actualUseFragmentTree } from '../useFragmentTree'
 import { mockFetchResponses, lastFetchBody, resetMocks } from '../../test/testUtils'
 import { sha256 } from '../../utils/sha256'
 import type { FragmentNode, ParseResult, DecomposeOption } from '../../types/fragment'
@@ -14,6 +16,7 @@ const rootNode: FragmentNode = {
   type: 'ORIGINAL',
   label: 'Full Query',
   sqlFragment: 'SELECT a, b FROM t1 JOIN t2 ON t1.id = t2.id WHERE t1.x > 10',
+  canonicalSql: 'unit-test-opaque-canonical',
   executable: true,
   executionHint: null,
   nodeCount: 0,
@@ -38,6 +41,7 @@ const childA: FragmentNode = {
   type: 'JOIN_SPLIT',
   label: 'Table t1',
   sqlFragment: 'SELECT a FROM t1 WHERE t1.x > 10',
+  canonicalSql: 'unit-test-opaque-canonical',
   executable: true,
   executionHint: null,
   nodeCount: 0,
@@ -51,6 +55,7 @@ const childB: FragmentNode = {
   type: 'JOIN_SPLIT',
   label: 'Table t2',
   sqlFragment: 'SELECT b FROM t2',
+  canonicalSql: 'unit-test-opaque-canonical',
   executable: true,
   executionHint: null,
   nodeCount: 0,
@@ -281,7 +286,7 @@ describe('useFragmentTree', () => {
     expect(fetchCalls[0][1].headers['Content-Type']).toBe('application/json')
 
     const body = lastFetchBody()
-    expect(body).toEqual({ sql: 'SELECT 1', dialect: 'postgresql' })
+    expect(body).toEqual({ ...graphRequest(currentWorkspace), sql: 'SELECT 1', dialect: 'postgresql' })
   })
 
   it('parse() defaults dialect to postgresql', async () => {
@@ -294,7 +299,7 @@ describe('useFragmentTree', () => {
     })
 
     const body = lastFetchBody()
-    expect(body).toEqual({ sql: 'SELECT 1', dialect: 'postgresql' })
+    expect(body).toEqual({ ...graphRequest(currentWorkspace), sql: 'SELECT 1', dialect: 'postgresql' })
   })
 
   it('parse() caches root options in optionsCache', async () => {
@@ -574,6 +579,7 @@ describe('useFragmentTree', () => {
 
     const body = lastFetchBody()
     expect(body).toEqual({
+      ...graphRequest(currentWorkspace, [rootNode]),
       sqlFragment: rootNode.sqlFragment,
       dialect: 'postgresql',
       ruleName: 'join-split',
@@ -717,7 +723,8 @@ describe('useFragmentTree', () => {
       type: 'ORIGINAL',
       label: 'New Query',
       sqlFragment: 'SELECT 1',
-      executable: true,
+      canonicalSql: 'unit-test-opaque-canonical',
+  executable: true,
       executionHint: null,
       nodeCount: 0,
       ruleName: null,
@@ -854,7 +861,8 @@ describe('useFragmentTree', () => {
 
       const fetchSpy = mockFetchResponses({ body: {
         node: { id: 'edited-1', type: 'USER_EDITED', label: 'edited', sqlFragment: 'select 1 from t where x',
-                executable: true, executionHint: null, nodeCount: 0, ruleName: null, children: [], editParentId: rootId! },
+                canonicalSql: 'unit-test-opaque-canonical',
+  executable: true, executionHint: null, nodeCount: 0, ruleName: null, children: [], editParentId: rootId! },
         classification: 'EDIT',
         navigatedToExisting: false,
       } }) as ReturnType<typeof vi.fn>
@@ -885,7 +893,8 @@ describe('useFragmentTree', () => {
 
       mockFetchResponses({ body: {
         node: { id: 'edited-1', type: 'USER_EDITED', label: 'edited', sqlFragment: 'select 1 from t where x',
-                executable: true, executionHint: null, nodeCount: 0, ruleName: null, children: [], editParentId: rootId! },
+                canonicalSql: 'unit-test-opaque-canonical',
+  executable: true, executionHint: null, nodeCount: 0, ruleName: null, children: [], editParentId: rootId! },
         classification: 'EDIT',
         navigatedToExisting: false,
       } })
@@ -1068,7 +1077,7 @@ describe('useFragmentTree', () => {
       expect(outcome).toEqual({ status: 'UNSUPPORTED', reason: 'canonicalization failed: boom' })
     })
 
-    it('EDIT from a degraded source carries sourceDegradedReason', async () => {
+    it('a degraded source cannot claim current-policy edit identity', async () => {
       const { result } = renderHook(() => useFragmentTree('http://localhost:8080'))
       const degradedRoot: FragmentNode = {
         ...rootNode,
@@ -1081,7 +1090,8 @@ describe('useFragmentTree', () => {
 
       mockFetchResponses({ body: {
         node: { id: 'edited-1', type: 'USER_EDITED', label: 'edited', sqlFragment: 'select 1 from t where x',
-                executable: true, executionHint: null, nodeCount: 0, ruleName: null, children: [], editParentId: rootId! },
+                canonicalSql: 'unit-test-opaque-canonical',
+  executable: true, executionHint: null, nodeCount: 0, ruleName: null, children: [], editParentId: rootId! },
         classification: 'EDIT',
         navigatedToExisting: false,
       } })
@@ -1090,16 +1100,11 @@ describe('useFragmentTree', () => {
         outcome = await result.current.submitUserEdit(rootId!, 'select 1 from t where x', 'add filter', 'postgresql')
       })
 
-      expect(outcome?.status).toBe('EDIT')
-      expect(outcome).toMatchObject({
-        status: 'EDIT',
-        nodeId: 'edited-1',
-        sql: 'select 1 from t where x',
-        sourceDegradedReason: 'unsupported node types: SqlExplain',
-      })
+      expect(outcome).toEqual({ status: 'FAILED', reason: 'A graph node has no verified identity.' })
+      expect(globalThis.fetch).not.toHaveBeenCalled()
     })
 
-    it('EDIT from a blank-marker source carries a present-but-null reason (spec §6)', async () => {
+    it('a blank degradation marker also blocks current-policy edit identity', async () => {
       const { result } = renderHook(() => useFragmentTree('http://localhost:8080'))
       const blankRoot: FragmentNode = { ...rootNode, canonicalizationError: '' }
       mockFetchResponses({ body: { ...sampleParseResult, tree: blankRoot } })
@@ -1109,7 +1114,8 @@ describe('useFragmentTree', () => {
 
       mockFetchResponses({ body: {
         node: { id: 'edited-1', type: 'USER_EDITED', label: 'edited', sqlFragment: 'select 1 from t where x',
-                executable: true, executionHint: null, nodeCount: 0, ruleName: null, children: [], editParentId: rootId! },
+                canonicalSql: 'unit-test-opaque-canonical',
+  executable: true, executionHint: null, nodeCount: 0, ruleName: null, children: [], editParentId: rootId! },
         classification: 'EDIT',
         navigatedToExisting: false,
       } })
@@ -1119,8 +1125,8 @@ describe('useFragmentTree', () => {
       })
 
       // Degraded (so the caller must state it) but with no reason text.
-      expect(outcome?.status).toBe('EDIT')
-      expect(outcome).toMatchObject({ status: 'EDIT', sourceDegradedReason: null })
+      expect(outcome).toEqual({ status: 'FAILED', reason: 'A graph node has no verified identity.' })
+      expect(globalThis.fetch).not.toHaveBeenCalled()
     })
 
     it('EDIT from a clean source carries NO sourceDegradedReason key at all', async () => {
@@ -1132,7 +1138,8 @@ describe('useFragmentTree', () => {
 
       mockFetchResponses({ body: {
         node: { id: 'edited-1', type: 'USER_EDITED', label: 'edited', sqlFragment: 'select 1 from t where x',
-                executable: true, executionHint: null, nodeCount: 0, ruleName: null, children: [], editParentId: rootId! },
+                canonicalSql: 'unit-test-opaque-canonical',
+  executable: true, executionHint: null, nodeCount: 0, ruleName: null, children: [], editParentId: rootId! },
         classification: 'EDIT',
         navigatedToExisting: false,
       } })
@@ -1152,7 +1159,8 @@ describe('useFragmentTree', () => {
 
       mockFetchResponses({ body: {
         node: { id: 'edited-1', type: 'USER_EDITED', label: 'edited', sqlFragment: 'select 1 from t where x',
-                executable: true, executionHint: null, nodeCount: 0, ruleName: null, children: [], editParentId: 'no-such-node' },
+                canonicalSql: 'unit-test-opaque-canonical',
+  executable: true, executionHint: null, nodeCount: 0, ruleName: null, children: [], editParentId: 'no-such-node' },
         classification: 'EDIT',
         navigatedToExisting: false,
       } })
@@ -1199,3 +1207,5 @@ describe('useFragmentTree', () => {
     expect(result.current.selectedNode?.sqlFragment).toBe('select 1 from t join u on true')
   })
 })
+
+function useFragmentTree(url: string | null, workspace?: SessionWorkspaceState | null) { return actualUseFragmentTree(url, { ...currentWorkspace, ...workspace }) }

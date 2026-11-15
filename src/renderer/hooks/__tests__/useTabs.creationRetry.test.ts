@@ -3,7 +3,7 @@ import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { createTabIntent, useTabs } from '../useTabs'
 
 const base = 'http://localhost:8080'
-const session = (id = 'target', sqlText = 'SELECT 2') => ({ id, name: 'Saved target', sqlText,
+const session = (id = 'target', sqlText = 'SELECT 2') => ({ id, name: 'Saved target', sqlText, identityPolicy:'structural-p0p1-v2', workspaceRevision:0,
   dialect: 'postgresql', connectionId: null, fragmentTreeJson: null, updatedAt: '2026-10-12T00:00:00Z' })
 const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status })
 function deferred<T>() {

@@ -1,0 +1,1187 @@
+[
+  {
+    "id": "identifier-brackets/sqlserver",
+    "stage": "historical-25",
+    "expectedSame": true,
+    "left": "SELECT h.SalesOrderID FROM Sales.SalesOrderHeader h",
+    "right": "SELECT [h].[SalesOrderID] FROM [Sales].[SalesOrderHeader] [h]"
+  },
+  {
+    "id": "identifier-case/sqlserver",
+    "stage": "historical-25",
+    "expectedSame": false,
+    "left": "SELECT Foo FROM Tab",
+    "right": "SELECT foo FROM Tab"
+  },
+  {
+    "id": "quoted-case/sqlserver",
+    "stage": "historical-25",
+    "expectedSame": false,
+    "left": "SELECT [Foo] FROM [Tab]",
+    "right": "SELECT [foo] FROM [Tab]"
+  },
+  {
+    "id": "predicate-case/sqlserver",
+    "stage": "historical-25",
+    "expectedSame": false,
+    "left": "SELECT 1 FROM [Tab] WHERE [Foo]=1",
+    "right": "SELECT 1 FROM [Tab] WHERE [foo]=1"
+  },
+  {
+    "id": "call-case/sqlserver",
+    "stage": "historical-25",
+    "expectedSame": false,
+    "left": "SELECT ABS([Foo]) FROM [Tab]",
+    "right": "SELECT ABS([foo]) FROM [Tab]"
+  },
+  {
+    "id": "identifier-space/sqlserver",
+    "stage": "historical-25",
+    "expectedSame": false,
+    "left": "SELECT ABS([a b]) FROM [Tab]",
+    "right": "SELECT ABS([ab]) FROM [Tab]"
+  },
+  {
+    "id": "component-boundary/sqlserver",
+    "stage": "historical-25",
+    "expectedSame": false,
+    "left": "SELECT ABS([a.b]) FROM [Tab]",
+    "right": "SELECT ABS([a].[b]) FROM [Tab]"
+  },
+  {
+    "id": "quoted-quote/sqlserver",
+    "stage": "historical-25",
+    "expectedSame": false,
+    "left": "SELECT ABS([a\"b]) FROM [Tab]",
+    "right": "SELECT ABS([ab]) FROM [Tab]"
+  },
+  {
+    "id": "literal-case/sqlserver",
+    "stage": "historical-25",
+    "expectedSame": false,
+    "left": "SELECT 'Ab' AS x",
+    "right": "SELECT 'ab' AS x"
+  },
+  {
+    "id": "literal-space/sqlserver",
+    "stage": "historical-25",
+    "expectedSame": false,
+    "left": "SELECT 'a b' AS x",
+    "right": "SELECT 'ab' AS x"
+  },
+  {
+    "id": "literal-escape/sqlserver",
+    "stage": "historical-25",
+    "expectedSame": false,
+    "left": "SELECT 'a''b' AS x",
+    "right": "SELECT 'ab' AS x"
+  },
+  {
+    "id": "literal-type/sqlserver",
+    "stage": "historical-25",
+    "expectedSame": false,
+    "left": "SELECT 1 AS x",
+    "right": "SELECT '1' AS x"
+  },
+  {
+    "id": "national-prefix/sqlserver",
+    "stage": "historical-25",
+    "expectedSame": false,
+    "left": "SELECT N'x' AS x",
+    "right": "SELECT 'x' AS x"
+  },
+  {
+    "id": "type-length/sqlserver",
+    "stage": "historical-25",
+    "expectedSame": false,
+    "left": "SELECT CAST(N'x' AS NVARCHAR(2)) AS x",
+    "right": "SELECT CAST(N'x' AS NVARCHAR(3)) AS x"
+  },
+  {
+    "id": "type-scale/sqlserver",
+    "stage": "historical-25",
+    "expectedSame": false,
+    "left": "SELECT CAST(1 AS DECIMAL(10,2)) AS x",
+    "right": "SELECT CAST(1 AS DECIMAL(10,3)) AS x"
+  },
+  {
+    "id": "type-max/sqlserver",
+    "stage": "historical-25",
+    "expectedSame": false,
+    "left": "SELECT CAST(NULL AS NVARCHAR(MAX)) AS x",
+    "right": "SELECT CAST(NULL AS NVARCHAR(4000)) AS x"
+  },
+  {
+    "id": "type-default/sqlserver",
+    "stage": "historical-25",
+    "expectedSame": false,
+    "left": "SELECT CAST(NULL AS VARCHAR) AS x",
+    "right": "SELECT CAST(NULL AS VARCHAR(30)) AS x"
+  },
+  {
+    "id": "convert-style/sqlserver",
+    "stage": "historical-25",
+    "expectedSame": false,
+    "left": "SELECT CONVERT(VARCHAR(8),'20260102',112) AS x",
+    "right": "SELECT CONVERT(VARCHAR(8),'20260102',101) AS x"
+  },
+  {
+    "id": "cte-case/sqlserver",
+    "stage": "historical-25",
+    "expectedSame": false,
+    "left": "WITH [Foo] AS (SELECT 1 AS id) SELECT id FROM [Foo]",
+    "right": "WITH [foo] AS (SELECT 1 AS id) SELECT id FROM [foo]"
+  },
+  {
+    "id": "cte-columns/sqlserver",
+    "stage": "historical-25",
+    "expectedSame": false,
+    "left": "WITH c(a) AS (SELECT 1) SELECT * FROM c",
+    "right": "WITH c(b) AS (SELECT 1) SELECT * FROM c"
+  },
+  {
+    "id": "alias-case/sqlserver",
+    "stage": "historical-25",
+    "expectedSame": false,
+    "left": "SELECT 1 AS [Foo]",
+    "right": "SELECT 1 AS [foo]"
+  },
+  {
+    "id": "and-reorder/sqlserver",
+    "stage": "historical-25",
+    "expectedSame": true,
+    "left": "SELECT a FROM t WHERE a=1 AND b=2",
+    "right": "SELECT a FROM t WHERE b=2 AND a=1"
+  },
+  {
+    "id": "comparison-direction/sqlserver",
+    "stage": "historical-25",
+    "expectedSame": true,
+    "left": "SELECT a FROM t WHERE a>1",
+    "right": "SELECT a FROM t WHERE 1<a"
+  },
+  {
+    "id": "keyword-layout/sqlserver",
+    "stage": "historical-25",
+    "expectedSame": true,
+    "left": "SELECT a FROM t",
+    "right": "select a\nfrom t"
+  },
+  {
+    "id": "quoted-type-input/sqlserver",
+    "stage": "historical-25",
+    "expectedSame": true,
+    "left": "SELECT CAST(1 AS INT) AS x",
+    "right": "SELECT CAST(1 AS INT) AS [x]"
+  },
+  {
+    "id": "mixed-boolean-grouping/sqlserver",
+    "stage": "shared-three-dialect",
+    "expectedSame": false,
+    "left": "SELECT a FROM t WHERE a=1 AND (b=2 OR c=3)",
+    "right": "SELECT a FROM t WHERE (a=1 AND b=2) OR c=3"
+  },
+  {
+    "id": "reorder-complete-subtrees/sqlserver",
+    "stage": "shared-three-dialect",
+    "expectedSame": true,
+    "left": "SELECT a FROM t WHERE (a=1 OR b=2) AND (c=3 OR d=4)",
+    "right": "SELECT a FROM t WHERE (d=4 OR c=3) AND (b=2 OR a=1)"
+  },
+  {
+    "id": "de-morgan/sqlserver",
+    "stage": "shared-three-dialect",
+    "expectedSame": true,
+    "left": "SELECT a FROM t WHERE NOT (a=1 OR b=2)",
+    "right": "SELECT a FROM t WHERE NOT a=1 AND NOT b=2"
+  },
+  {
+    "id": "nested-de-morgan/sqlserver",
+    "stage": "shared-three-dialect",
+    "expectedSame": true,
+    "left": "SELECT a FROM t WHERE NOT (a=1 OR (b=2 AND c=3))",
+    "right": "SELECT a FROM t WHERE NOT a=1 AND (NOT b=2 OR NOT c=3)"
+  },
+  {
+    "id": "duplicate-multiplicity/sqlserver",
+    "stage": "shared-three-dialect",
+    "expectedSame": false,
+    "left": "SELECT a FROM t WHERE a=1 AND a=1",
+    "right": "SELECT a FROM t WHERE a=1"
+  },
+  {
+    "id": "select-order/sqlserver",
+    "stage": "shared-three-dialect",
+    "expectedSame": false,
+    "left": "SELECT a,b FROM t",
+    "right": "SELECT b,a FROM t"
+  },
+  {
+    "id": "order-by-order/sqlserver",
+    "stage": "shared-three-dialect",
+    "expectedSame": false,
+    "left": "SELECT a FROM t ORDER BY a,b",
+    "right": "SELECT a FROM t ORDER BY b,a"
+  },
+  {
+    "id": "cte-column-order/sqlserver",
+    "stage": "shared-three-dialect",
+    "expectedSame": false,
+    "left": "WITH c(a,b) AS (SELECT 1,2) SELECT * FROM c",
+    "right": "WITH c(b,a) AS (SELECT 1,2) SELECT * FROM c"
+  },
+  {
+    "id": "predicate-delete/sqlserver",
+    "stage": "shared-three-dialect",
+    "expectedSame": false,
+    "left": "SELECT a FROM t WHERE a=1 AND b=2",
+    "right": "SELECT a FROM t WHERE a=1"
+  },
+  {
+    "id": "predicate-modify/sqlserver",
+    "stage": "shared-three-dialect",
+    "expectedSame": false,
+    "left": "SELECT a FROM t WHERE b<20",
+    "right": "SELECT a FROM t WHERE b<=20"
+  },
+  {
+    "id": "explicit-all/sqlserver",
+    "stage": "shared-three-dialect",
+    "expectedSame": true,
+    "left": "SELECT ALL a FROM t",
+    "right": "SELECT a FROM t"
+  },
+  {
+    "id": "window-order/sqlserver",
+    "stage": "shared-three-dialect",
+    "expectedSame": false,
+    "left": "SELECT SUM(a) OVER (ORDER BY b) FROM t",
+    "right": "SELECT SUM(a) OVER (ORDER BY c) FROM t"
+  },
+  {
+    "id": "identifier-space/sqlserver",
+    "stage": "shared-three-dialect",
+    "expectedSame": false,
+    "left": "SELECT ABS([a b]) FROM [Tab]",
+    "right": "SELECT ABS([ab]) FROM [Tab]"
+  },
+  {
+    "id": "identifier-component/sqlserver",
+    "stage": "shared-three-dialect",
+    "expectedSame": false,
+    "left": "SELECT ABS([a.b]) FROM [Tab]",
+    "right": "SELECT ABS([a].[b]) FROM [Tab]"
+  },
+  {
+    "id": "cte-column/sqlserver",
+    "stage": "shared-three-dialect",
+    "expectedSame": false,
+    "left": "WITH c(a) AS (SELECT 1) SELECT * FROM c",
+    "right": "WITH c(b) AS (SELECT 1) SELECT * FROM c"
+  },
+  {
+    "id": "mixed-boolean-grouping/postgresql",
+    "stage": "shared-three-dialect",
+    "expectedSame": false,
+    "left": "SELECT a FROM t WHERE a=1 AND (b=2 OR c=3)",
+    "right": "SELECT a FROM t WHERE (a=1 AND b=2) OR c=3"
+  },
+  {
+    "id": "reorder-complete-subtrees/postgresql",
+    "stage": "shared-three-dialect",
+    "expectedSame": true,
+    "left": "SELECT a FROM t WHERE (a=1 OR b=2) AND (c=3 OR d=4)",
+    "right": "SELECT a FROM t WHERE (d=4 OR c=3) AND (b=2 OR a=1)"
+  },
+  {
+    "id": "de-morgan/postgresql",
+    "stage": "shared-three-dialect",
+    "expectedSame": true,
+    "left": "SELECT a FROM t WHERE NOT (a=1 OR b=2)",
+    "right": "SELECT a FROM t WHERE NOT a=1 AND NOT b=2"
+  },
+  {
+    "id": "nested-de-morgan/postgresql",
+    "stage": "shared-three-dialect",
+    "expectedSame": true,
+    "left": "SELECT a FROM t WHERE NOT (a=1 OR (b=2 AND c=3))",
+    "right": "SELECT a FROM t WHERE NOT a=1 AND (NOT b=2 OR NOT c=3)"
+  },
+  {
+    "id": "duplicate-multiplicity/postgresql",
+    "stage": "shared-three-dialect",
+    "expectedSame": false,
+    "left": "SELECT a FROM t WHERE a=1 AND a=1",
+    "right": "SELECT a FROM t WHERE a=1"
+  },
+  {
+    "id": "select-order/postgresql",
+    "stage": "shared-three-dialect",
+    "expectedSame": false,
+    "left": "SELECT a,b FROM t",
+    "right": "SELECT b,a FROM t"
+  },
+  {
+    "id": "order-by-order/postgresql",
+    "stage": "shared-three-dialect",
+    "expectedSame": false,
+    "left": "SELECT a FROM t ORDER BY a,b",
+    "right": "SELECT a FROM t ORDER BY b,a"
+  },
+  {
+    "id": "cte-column-order/postgresql",
+    "stage": "shared-three-dialect",
+    "expectedSame": false,
+    "left": "WITH c(a,b) AS (SELECT 1,2) SELECT * FROM c",
+    "right": "WITH c(b,a) AS (SELECT 1,2) SELECT * FROM c"
+  },
+  {
+    "id": "predicate-delete/postgresql",
+    "stage": "shared-three-dialect",
+    "expectedSame": false,
+    "left": "SELECT a FROM t WHERE a=1 AND b=2",
+    "right": "SELECT a FROM t WHERE a=1"
+  },
+  {
+    "id": "predicate-modify/postgresql",
+    "stage": "shared-three-dialect",
+    "expectedSame": false,
+    "left": "SELECT a FROM t WHERE b<20",
+    "right": "SELECT a FROM t WHERE b<=20"
+  },
+  {
+    "id": "explicit-all/postgresql",
+    "stage": "shared-three-dialect",
+    "expectedSame": true,
+    "left": "SELECT ALL a FROM t",
+    "right": "SELECT a FROM t"
+  },
+  {
+    "id": "window-order/postgresql",
+    "stage": "shared-three-dialect",
+    "expectedSame": false,
+    "left": "SELECT SUM(a) OVER (ORDER BY b) FROM t",
+    "right": "SELECT SUM(a) OVER (ORDER BY c) FROM t"
+  },
+  {
+    "id": "identifier-space/postgresql",
+    "stage": "shared-three-dialect",
+    "expectedSame": false,
+    "left": "SELECT ABS(\"a b\") FROM \"Tab\"",
+    "right": "SELECT ABS(\"ab\") FROM \"Tab\""
+  },
+  {
+    "id": "identifier-component/postgresql",
+    "stage": "shared-three-dialect",
+    "expectedSame": false,
+    "left": "SELECT ABS(\"a.b\") FROM \"Tab\"",
+    "right": "SELECT ABS(\"a\".\"b\") FROM \"Tab\""
+  },
+  {
+    "id": "cte-column/postgresql",
+    "stage": "shared-three-dialect",
+    "expectedSame": false,
+    "left": "WITH c(a) AS (SELECT 1) SELECT * FROM c",
+    "right": "WITH c(b) AS (SELECT 1) SELECT * FROM c"
+  },
+  {
+    "id": "mixed-boolean-grouping/mysql",
+    "stage": "shared-three-dialect",
+    "expectedSame": false,
+    "left": "SELECT a FROM t WHERE a=1 AND (b=2 OR c=3)",
+    "right": "SELECT a FROM t WHERE (a=1 AND b=2) OR c=3"
+  },
+  {
+    "id": "reorder-complete-subtrees/mysql",
+    "stage": "shared-three-dialect",
+    "expectedSame": true,
+    "left": "SELECT a FROM t WHERE (a=1 OR b=2) AND (c=3 OR d=4)",
+    "right": "SELECT a FROM t WHERE (d=4 OR c=3) AND (b=2 OR a=1)"
+  },
+  {
+    "id": "de-morgan/mysql",
+    "stage": "shared-three-dialect",
+    "expectedSame": true,
+    "left": "SELECT a FROM t WHERE NOT (a=1 OR b=2)",
+    "right": "SELECT a FROM t WHERE NOT a=1 AND NOT b=2"
+  },
+  {
+    "id": "nested-de-morgan/mysql",
+    "stage": "shared-three-dialect",
+    "expectedSame": true,
+    "left": "SELECT a FROM t WHERE NOT (a=1 OR (b=2 AND c=3))",
+    "right": "SELECT a FROM t WHERE NOT a=1 AND (NOT b=2 OR NOT c=3)"
+  },
+  {
+    "id": "duplicate-multiplicity/mysql",
+    "stage": "shared-three-dialect",
+    "expectedSame": false,
+    "left": "SELECT a FROM t WHERE a=1 AND a=1",
+    "right": "SELECT a FROM t WHERE a=1"
+  },
+  {
+    "id": "select-order/mysql",
+    "stage": "shared-three-dialect",
+    "expectedSame": false,
+    "left": "SELECT a,b FROM t",
+    "right": "SELECT b,a FROM t"
+  },
+  {
+    "id": "order-by-order/mysql",
+    "stage": "shared-three-dialect",
+    "expectedSame": false,
+    "left": "SELECT a FROM t ORDER BY a,b",
+    "right": "SELECT a FROM t ORDER BY b,a"
+  },
+  {
+    "id": "cte-column-order/mysql",
+    "stage": "shared-three-dialect",
+    "expectedSame": false,
+    "left": "WITH c(a,b) AS (SELECT 1,2) SELECT * FROM c",
+    "right": "WITH c(b,a) AS (SELECT 1,2) SELECT * FROM c"
+  },
+  {
+    "id": "predicate-delete/mysql",
+    "stage": "shared-three-dialect",
+    "expectedSame": false,
+    "left": "SELECT a FROM t WHERE a=1 AND b=2",
+    "right": "SELECT a FROM t WHERE a=1"
+  },
+  {
+    "id": "predicate-modify/mysql",
+    "stage": "shared-three-dialect",
+    "expectedSame": false,
+    "left": "SELECT a FROM t WHERE b<20",
+    "right": "SELECT a FROM t WHERE b<=20"
+  },
+  {
+    "id": "explicit-all/mysql",
+    "stage": "shared-three-dialect",
+    "expectedSame": true,
+    "left": "SELECT ALL a FROM t",
+    "right": "SELECT a FROM t"
+  },
+  {
+    "id": "window-order/mysql",
+    "stage": "shared-three-dialect",
+    "expectedSame": false,
+    "left": "SELECT SUM(a) OVER (ORDER BY b) FROM t",
+    "right": "SELECT SUM(a) OVER (ORDER BY c) FROM t"
+  },
+  {
+    "id": "identifier-space/mysql",
+    "stage": "shared-three-dialect",
+    "expectedSame": false,
+    "left": "SELECT ABS(`a b`) FROM `Tab`",
+    "right": "SELECT ABS(`ab`) FROM `Tab`"
+  },
+  {
+    "id": "identifier-component/mysql",
+    "stage": "shared-three-dialect",
+    "expectedSame": false,
+    "left": "SELECT ABS(`a.b`) FROM `Tab`",
+    "right": "SELECT ABS(`a`.`b`) FROM `Tab`"
+  },
+  {
+    "id": "cte-column/mysql",
+    "stage": "shared-three-dialect",
+    "expectedSame": false,
+    "left": "WITH c(a) AS (SELECT 1) SELECT * FROM c",
+    "right": "WITH c(b) AS (SELECT 1) SELECT * FROM c"
+  },
+  {
+    "id": "null/CHAR(10)",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST(NULL AS CHAR(10)) AS type_value"
+  },
+  {
+    "id": "null/VARCHAR(10)",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST(NULL AS VARCHAR(10)) AS type_value"
+  },
+  {
+    "id": "null/VARCHAR(MAX)",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST(NULL AS VARCHAR(MAX)) AS type_value"
+  },
+  {
+    "id": "null/NCHAR(10)",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST(NULL AS NCHAR(10)) AS type_value"
+  },
+  {
+    "id": "null/NVARCHAR(10)",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST(NULL AS NVARCHAR(10)) AS type_value"
+  },
+  {
+    "id": "null/NVARCHAR(MAX)",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST(NULL AS NVARCHAR(MAX)) AS type_value"
+  },
+  {
+    "id": "null/NVARCHAR",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST(NULL AS NVARCHAR) AS type_value"
+  },
+  {
+    "id": "null/BINARY(4)",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST(NULL AS BINARY(4)) AS type_value"
+  },
+  {
+    "id": "null/VARBINARY(4)",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST(NULL AS VARBINARY(4)) AS type_value"
+  },
+  {
+    "id": "null/VARBINARY(MAX)",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST(NULL AS VARBINARY(MAX)) AS type_value"
+  },
+  {
+    "id": "null/BIT",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST(NULL AS BIT) AS type_value"
+  },
+  {
+    "id": "null/TINYINT",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST(NULL AS TINYINT) AS type_value"
+  },
+  {
+    "id": "null/SMALLINT",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST(NULL AS SMALLINT) AS type_value"
+  },
+  {
+    "id": "null/INT",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST(NULL AS INT) AS type_value"
+  },
+  {
+    "id": "null/BIGINT",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST(NULL AS BIGINT) AS type_value"
+  },
+  {
+    "id": "null/DECIMAL(19,4)",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST(NULL AS DECIMAL(19,4)) AS type_value"
+  },
+  {
+    "id": "null/NUMERIC(19,4)",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST(NULL AS NUMERIC(19,4)) AS type_value"
+  },
+  {
+    "id": "null/MONEY",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST(NULL AS MONEY) AS type_value"
+  },
+  {
+    "id": "null/SMALLMONEY",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST(NULL AS SMALLMONEY) AS type_value"
+  },
+  {
+    "id": "null/REAL",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST(NULL AS REAL) AS type_value"
+  },
+  {
+    "id": "null/FLOAT(24)",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST(NULL AS FLOAT(24)) AS type_value"
+  },
+  {
+    "id": "null/FLOAT(53)",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST(NULL AS FLOAT(53)) AS type_value"
+  },
+  {
+    "id": "null/DATE",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST(NULL AS DATE) AS type_value"
+  },
+  {
+    "id": "null/TIME(3)",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST(NULL AS TIME(3)) AS type_value"
+  },
+  {
+    "id": "null/DATETIME",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST(NULL AS DATETIME) AS type_value"
+  },
+  {
+    "id": "null/SMALLDATETIME",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST(NULL AS SMALLDATETIME) AS type_value"
+  },
+  {
+    "id": "null/DATETIME2(3)",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST(NULL AS DATETIME2(3)) AS type_value"
+  },
+  {
+    "id": "null/DATETIMEOFFSET(3)",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST(NULL AS DATETIMEOFFSET(3)) AS type_value"
+  },
+  {
+    "id": "null/UNIQUEIDENTIFIER",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST(NULL AS UNIQUEIDENTIFIER) AS type_value"
+  },
+  {
+    "id": "null/XML",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST(NULL AS XML) AS type_value"
+  },
+  {
+    "id": "null/SQL_VARIANT",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST(NULL AS SQL_VARIANT) AS type_value"
+  },
+  {
+    "id": "unicode-short",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST(N'业务中文' AS NVARCHAR(2)) AS type_value"
+  },
+  {
+    "id": "unicode-fixed",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST(N'业务' AS NCHAR(5)) AS type_value"
+  },
+  {
+    "id": "unicode-max",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST(N'业务😀' AS NVARCHAR(MAX)) AS type_value"
+  },
+  {
+    "id": "unicode-default-length",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST(N'12345678901234567890123456789012345' AS NVARCHAR) AS type_value"
+  },
+  {
+    "id": "varchar-max",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST('abc' AS VARCHAR(MAX)) AS type_value"
+  },
+  {
+    "id": "binary-value",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST('AB' AS VARBINARY(4)) AS type_value"
+  },
+  {
+    "id": "binary-max",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST('AB' AS VARBINARY(MAX)) AS type_value"
+  },
+  {
+    "id": "decimal-rounding",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST(123.45678 AS DECIMAL(10,3)) AS type_value"
+  },
+  {
+    "id": "decimal-beyond-double",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST(9007199254740993 AS NUMERIC(20,0)) AS type_value"
+  },
+  {
+    "id": "money-scale",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST(123.4567 AS MONEY) AS type_value"
+  },
+  {
+    "id": "float24",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST(123.456789 AS FLOAT(24)) AS type_value"
+  },
+  {
+    "id": "float53",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST(123.456789 AS FLOAT(53)) AS type_value"
+  },
+  {
+    "id": "datetime-value",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST('2026-01-02T03:04:05.123' AS DATETIME) AS type_value"
+  },
+  {
+    "id": "datetime2-value",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST('2026-01-02T03:04:05.1234567' AS DATETIME2(7)) AS type_value"
+  },
+  {
+    "id": "offset-value",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST('2026-01-02T03:04:05.123+08:00' AS DATETIMEOFFSET(3)) AS type_value"
+  },
+  {
+    "id": "time-value",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST('03:04:05.1234567' AS TIME(7)) AS type_value"
+  },
+  {
+    "id": "uuid-value",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST('6F9619FF-8B86-D011-B42D-00C04FC964FF' AS UNIQUEIDENTIFIER) AS type_value"
+  },
+  {
+    "id": "xml-value",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CAST(N'<v>业务</v>' AS XML) AS type_value"
+  },
+  {
+    "id": "convert-unicode",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CONVERT(NVARCHAR(2),N'业务中文') AS type_value"
+  },
+  {
+    "id": "convert-int",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CONVERT(INT,'42') AS type_value"
+  },
+  {
+    "id": "convert-date-style",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CONVERT(DATE,'20260102',112) AS type_value"
+  },
+  {
+    "id": "convert-output-style",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CONVERT(VARCHAR(8),CAST('2026-01-02' AS DATE),112) AS type_value"
+  },
+  {
+    "id": "nested-convert",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CONVERT(NVARCHAR(12),CONVERT(DECIMAL(8,2),'12.34')) AS type_value"
+  },
+  {
+    "id": "convert-null-style",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CONVERT(VARCHAR(8),CAST('2026-01-02' AS DATE),NULL) AS type_value"
+  },
+  {
+    "id": "type-text-literal",
+    "stage": "type-roundtrip",
+    "sql": "SELECT N'CAST AS NVARCHAR(9999); CONVERT(INT,1)' AS type_value"
+  },
+  {
+    "id": "type-name-identifiers",
+    "stage": "type-roundtrip",
+    "sql": "SELECT [NVARCHAR],[CONVERT] FROM (SELECT CAST(N'业务' AS NVARCHAR(10)) AS [NVARCHAR],1 AS [CONVERT]) t"
+  },
+  {
+    "id": "case-types",
+    "stage": "type-roundtrip",
+    "sql": "SELECT CASE WHEN 1=1 THEN CONVERT(NVARCHAR(10),N'业务') ELSE CAST(N'第二' AS NVARCHAR(10)) END AS type_value"
+  },
+  {
+    "id": "positions-and-names",
+    "stage": "type-roundtrip",
+    "sql": "SELECT\tTOP (1) CAST(N'业务' AS /* outer /* nested */ end */ NVARCHAR(10)) AS [NVARCHAR] -- CAST AS NVARCHAR(9999)\n"
+  },
+  {
+    "id": "business-types",
+    "stage": "type-roundtrip",
+    "sql": "SELECT TOP (3) h.SalesOrderID,CAST(h.SubTotal AS DECIMAL(19,4)) AS amount,CONVERT(VARCHAR(8),h.OrderDate,112) AS date_key FROM Sales.SalesOrderHeader h ORDER BY h.SalesOrderID"
+  },
+  {
+    "id": "top-order",
+    "stage": "syntax-roundtrip",
+    "sql": "SELECT TOP 1 o.id FROM (SELECT 2 AS id UNION ALL SELECT 1 AS id) o ORDER BY o.id"
+  },
+  {
+    "id": "top-parenthesized",
+    "stage": "syntax-roundtrip",
+    "sql": "SELECT TOP (2) o.id FROM (SELECT 2 AS id UNION ALL SELECT 1 AS id) o ORDER BY o.id"
+  },
+  {
+    "id": "top-zero",
+    "stage": "syntax-roundtrip",
+    "sql": "SELECT TOP 0 o.id FROM (SELECT 1 AS id) o"
+  },
+  {
+    "id": "top-distinct",
+    "stage": "syntax-roundtrip",
+    "sql": "SELECT DISTINCT TOP 1 o.id FROM (SELECT 1 AS id UNION ALL SELECT 1 AS id) o"
+  },
+  {
+    "id": "top-nested",
+    "stage": "syntax-roundtrip",
+    "sql": "SELECT TOP 1 a.id FROM (SELECT TOP 2 o.id FROM (SELECT 3 AS id UNION ALL SELECT 1 AS id UNION ALL SELECT 2 AS id) o ORDER BY o.id) a ORDER BY a.id DESC"
+  },
+  {
+    "id": "top-cte",
+    "stage": "syntax-roundtrip",
+    "sql": "WITH orders AS (SELECT 1 AS id UNION ALL SELECT 2 AS id) SELECT TOP (1) o.id FROM orders o ORDER BY o.id DESC"
+  },
+  {
+    "id": "top-trivia",
+    "stage": "syntax-roundtrip",
+    "sql": "SELECT\tTOP /* TOP 5, 中文 */ (\n 1\n) o.id\nFROM (SELECT 1 AS id) o"
+  },
+  {
+    "id": "national",
+    "stage": "syntax-roundtrip",
+    "sql": "SELECT N'业务' AS label"
+  },
+  {
+    "id": "national-escape",
+    "stage": "syntax-roundtrip",
+    "sql": "SELECT N'业''务' AS label"
+  },
+  {
+    "id": "national-emoji",
+    "stage": "syntax-roundtrip",
+    "sql": "SELECT N'业务😀' AS label"
+  },
+  {
+    "id": "national-type",
+    "stage": "syntax-roundtrip",
+    "sql": "SELECT SQL_VARIANT_PROPERTY(N'业务','BaseType') AS native_type, DATALENGTH(N'业务') AS bytes"
+  },
+  {
+    "id": "national-nested",
+    "stage": "syntax-roundtrip",
+    "sql": "SELECT N'中' AS label FROM (SELECT N'文' AS other_label) o"
+  },
+  {
+    "id": "dateadd",
+    "stage": "syntax-roundtrip",
+    "sql": "SELECT DATEADD(day,1,CAST('2026-01-01' AS DATE)) AS d"
+  },
+  {
+    "id": "isnull",
+    "stage": "syntax-roundtrip",
+    "sql": "SELECT ISNULL(CAST(NULL AS INT),1) AS id"
+  },
+  {
+    "id": "cross-apply",
+    "stage": "syntax-roundtrip",
+    "sql": "SELECT o.id,x.item FROM (SELECT 1 AS id) o CROSS APPLY (SELECT o.id AS item) x"
+  },
+  {
+    "id": "outer-apply",
+    "stage": "syntax-roundtrip",
+    "sql": "SELECT o.id,x.item FROM (SELECT 1 AS id) o OUTER APPLY (SELECT o.id AS item) x"
+  },
+  {
+    "id": "outer-apply-empty",
+    "stage": "syntax-roundtrip",
+    "sql": "SELECT o.id,x.item FROM (SELECT 1 AS id) o OUTER APPLY (SELECT o.id AS item FROM (SELECT 1 AS dummy) d WHERE o.id=2) x"
+  },
+  {
+    "id": "national-position",
+    "stage": "syntax-roundtrip",
+    "sql": "SELECT\tTOP (1) N'中\n文' AS label, N'第二' AS other_label /* nested /* comment */ end */"
+  },
+  {
+    "id": "bracket-top",
+    "stage": "syntax-roundtrip",
+    "sql": "SELECT [TOP] FROM (SELECT 1 AS [TOP]) t -- TOP 2"
+  },
+  {
+    "id": "between",
+    "stage": "syntax-roundtrip",
+    "sql": "SELECT o.id FROM (SELECT 1 AS id) o WHERE o.id BETWEEN 0 AND 2"
+  },
+  {
+    "id": "between-negated",
+    "stage": "syntax-roundtrip",
+    "sql": "SELECT o.id FROM (SELECT 1 AS id) o WHERE o.id NOT BETWEEN 2 AND 3"
+  },
+  {
+    "id": "bracket-escape",
+    "stage": "syntax-roundtrip",
+    "sql": "SELECT [a]]b] FROM (SELECT 1 AS [a]]b]) t"
+  },
+  {
+    "id": "identifier-spelling",
+    "stage": "syntax-roundtrip",
+    "sql": "SELECT p.BusinessEntityID FROM Person.Person p WHERE p.BusinessEntityID=1"
+  },
+  {
+    "id": "literal-top-comment",
+    "stage": "syntax-roundtrip",
+    "sql": "SELECT N'TOP 1 -- /* 业务 */' AS label /* outer /* TOP 2 */ comment */"
+  },
+  {
+    "id": "row-number",
+    "stage": "syntax-roundtrip",
+    "sql": "SELECT t.id FROM (SELECT o.id, ROW_NUMBER() OVER (ORDER BY o.id) AS rn FROM (SELECT 2 AS id UNION ALL SELECT 1 AS id) o) t WHERE t.rn=1"
+  },
+  {
+    "id": "GREATEST/0",
+    "stage": "function-roundtrip",
+    "sql": "SELECT GREATEST(1,2) AS extrema_value"
+  },
+  {
+    "id": "GREATEST/1",
+    "stage": "function-roundtrip",
+    "sql": "SELECT GREATEST(42) AS extrema_value"
+  },
+  {
+    "id": "GREATEST/2",
+    "stage": "function-roundtrip",
+    "sql": "SELECT GREATEST(NULL,2,NULL) AS extrema_value"
+  },
+  {
+    "id": "GREATEST/3",
+    "stage": "function-roundtrip",
+    "sql": "SELECT GREATEST(NULL,NULL) AS extrema_value"
+  },
+  {
+    "id": "GREATEST/4",
+    "stage": "function-roundtrip",
+    "sql": "SELECT GREATEST(CAST(NULL AS DECIMAL(19,4)),CAST(NULL AS DECIMAL(19,4))) AS extrema_value"
+  },
+  {
+    "id": "GREATEST/5",
+    "stage": "function-roundtrip",
+    "sql": "SELECT GREATEST(CAST(12.34 AS DECIMAL(10,2)),CAST(12.345 AS DECIMAL(12,3))) AS extrema_value"
+  },
+  {
+    "id": "GREATEST/6",
+    "stage": "function-roundtrip",
+    "sql": "SELECT GREATEST(CAST(1 AS SMALLINT),CAST(2 AS BIGINT)) AS extrema_value"
+  },
+  {
+    "id": "GREATEST/7",
+    "stage": "function-roundtrip",
+    "sql": "SELECT GREATEST(N'业务',N'中文') AS extrema_value"
+  },
+  {
+    "id": "GREATEST/8",
+    "stage": "function-roundtrip",
+    "sql": "SELECT GREATEST(CAST('2026-01-01' AS DATE),CAST('2026-02-01' AS DATE)) AS extrema_value"
+  },
+  {
+    "id": "GREATEST/9",
+    "stage": "function-roundtrip",
+    "sql": "SELECT GREATEST(CAST(N'abc' AS NVARCHAR(MAX)),N'xyz') AS extrema_value"
+  },
+  {
+    "id": "GREATEST/10",
+    "stage": "function-roundtrip",
+    "sql": "SELECT GREATEST((SELECT MAX(v) FROM (VALUES (1),(3)) q(v)),2) AS extrema_value"
+  },
+  {
+    "id": "GREATEST/11",
+    "stage": "function-roundtrip",
+    "sql": "SELECT GREATEST(ABS(-3),2) AS extrema_value"
+  },
+  {
+    "id": "GREATEST/254-arguments",
+    "stage": "function-roundtrip",
+    "sql": "SELECT GREATEST(1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1) AS extrema_value"
+  },
+  {
+    "id": "GREATEST/case-fold",
+    "stage": "function-roundtrip",
+    "sql": "select greatest(1,2) AS extrema_value"
+  },
+  {
+    "id": "GREATEST/quoted-identifiers",
+    "stage": "function-roundtrip",
+    "sql": "SELECT GREATEST([a b],[c.d]) AS extrema_value FROM (SELECT 1 AS [a b],2 AS [c.d]) q"
+  },
+  {
+    "id": "LEAST/15",
+    "stage": "function-roundtrip",
+    "sql": "SELECT LEAST(1,2) AS extrema_value"
+  },
+  {
+    "id": "LEAST/16",
+    "stage": "function-roundtrip",
+    "sql": "SELECT LEAST(42) AS extrema_value"
+  },
+  {
+    "id": "LEAST/17",
+    "stage": "function-roundtrip",
+    "sql": "SELECT LEAST(NULL,2,NULL) AS extrema_value"
+  },
+  {
+    "id": "LEAST/18",
+    "stage": "function-roundtrip",
+    "sql": "SELECT LEAST(NULL,NULL) AS extrema_value"
+  },
+  {
+    "id": "LEAST/19",
+    "stage": "function-roundtrip",
+    "sql": "SELECT LEAST(CAST(NULL AS DECIMAL(19,4)),CAST(NULL AS DECIMAL(19,4))) AS extrema_value"
+  },
+  {
+    "id": "LEAST/20",
+    "stage": "function-roundtrip",
+    "sql": "SELECT LEAST(CAST(12.34 AS DECIMAL(10,2)),CAST(12.345 AS DECIMAL(12,3))) AS extrema_value"
+  },
+  {
+    "id": "LEAST/21",
+    "stage": "function-roundtrip",
+    "sql": "SELECT LEAST(CAST(1 AS SMALLINT),CAST(2 AS BIGINT)) AS extrema_value"
+  },
+  {
+    "id": "LEAST/22",
+    "stage": "function-roundtrip",
+    "sql": "SELECT LEAST(N'业务',N'中文') AS extrema_value"
+  },
+  {
+    "id": "LEAST/23",
+    "stage": "function-roundtrip",
+    "sql": "SELECT LEAST(CAST('2026-01-01' AS DATE),CAST('2026-02-01' AS DATE)) AS extrema_value"
+  },
+  {
+    "id": "LEAST/24",
+    "stage": "function-roundtrip",
+    "sql": "SELECT LEAST(CAST(N'abc' AS NVARCHAR(MAX)),N'xyz') AS extrema_value"
+  },
+  {
+    "id": "LEAST/25",
+    "stage": "function-roundtrip",
+    "sql": "SELECT LEAST((SELECT MAX(v) FROM (VALUES (1),(3)) q(v)),2) AS extrema_value"
+  },
+  {
+    "id": "LEAST/26",
+    "stage": "function-roundtrip",
+    "sql": "SELECT LEAST(ABS(-3),2) AS extrema_value"
+  },
+  {
+    "id": "LEAST/254-arguments",
+    "stage": "function-roundtrip",
+    "sql": "SELECT LEAST(1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1) AS extrema_value"
+  },
+  {
+    "id": "LEAST/case-fold",
+    "stage": "function-roundtrip",
+    "sql": "select least(1,2) AS extrema_value"
+  },
+  {
+    "id": "LEAST/quoted-identifiers",
+    "stage": "function-roundtrip",
+    "sql": "SELECT LEAST([a b],[c.d]) AS extrema_value FROM (SELECT 1 AS [a b],2 AS [c.d]) q"
+  },
+  {
+    "id": "default-schema",
+    "stage": "json-roundtrip",
+    "sql": "SELECT [key],value,type FROM OPENJSON(N'{\"id\":1,\"name\":\"业务\"}') ORDER BY [key]"
+  },
+  {
+    "id": "explicit-int",
+    "stage": "json-roundtrip",
+    "sql": "SELECT j.id FROM OPENJSON(N'[{\"id\":1},{\"id\":2}]') WITH (id INT '$.id') j ORDER BY j.id"
+  },
+  {
+    "id": "root-path",
+    "stage": "json-roundtrip",
+    "sql": "SELECT j.id FROM OPENJSON(N'{\"items\":[{\"id\":7}]}','$.items') WITH (id INT '$.id') j"
+  },
+  {
+    "id": "case-sensitive-path",
+    "stage": "json-roundtrip",
+    "sql": "SELECT j.id,j.upper_id FROM OPENJSON(N'{\"id\":1,\"ID\":2}') WITH (id INT '$.id',upper_id INT '$.ID') j"
+  },
+  {
+    "id": "lax-missing",
+    "stage": "json-roundtrip",
+    "sql": "SELECT j.id FROM OPENJSON(N'{\"other\":1}') WITH (id INT 'lax $.id') j"
+  },
+  {
+    "id": "as-json",
+    "stage": "json-roundtrip",
+    "sql": "SELECT j.nested FROM OPENJSON(N'{\"items\":[1,2]}') WITH (nested NVARCHAR(MAX) '$.items' AS JSON) j"
+  },
+  {
+    "id": "typed-columns",
+    "stage": "json-roundtrip",
+    "sql": "SELECT j.amount,j.label FROM OPENJSON(N'{\"amount\":12.345,\"label\":\"业务\"}') WITH (amount DECIMAL(10,2) '$.amount',label NVARCHAR(10) '$.label') j"
+  },
+  {
+    "id": "cross-apply",
+    "stage": "json-roundtrip",
+    "sql": "SELECT p.id,j.n FROM (VALUES (1,N'[{\"n\":3},{\"n\":4}]')) p(id,payload) CROSS APPLY OPENJSON(p.payload) WITH (n INT '$.n') j ORDER BY j.n"
+  },
+  {
+    "id": "outer-apply-empty",
+    "stage": "json-roundtrip",
+    "sql": "SELECT p.id,j.n FROM (VALUES (1,N'[]')) p(id,payload) OUTER APPLY OPENJSON(p.payload) WITH (n INT '$.n') j"
+  },
+  {
+    "id": "default-ordinal",
+    "stage": "json-roundtrip",
+    "sql": "SELECT [key],value,type FROM OPENJSON(N'[10,null,{\"n\":3}]') ORDER BY CONVERT(INT,[key])"
+  },
+  {
+    "id": "implicit-column-path",
+    "stage": "json-roundtrip",
+    "sql": "SELECT j.id FROM OPENJSON(N'{\"id\":9}') WITH (id INT) j"
+  },
+  {
+    "id": "quoted-column",
+    "stage": "json-roundtrip",
+    "sql": "SELECT j.[a b] FROM OPENJSON(N'{\"a b\":8}') WITH ([a b] INT '$.\"a b\"') j"
+  },
+  {
+    "id": "national-path-and-comment",
+    "stage": "json-roundtrip",
+    "sql": "SELECT\tj.id\nFROM OPENJSON(N'{\"业务\":6}') /* OPENJSON WITH */ WITH (id INT N'$.\"业务\"') j"
+  },
+  {
+    "id": "nested-json-apply",
+    "stage": "json-roundtrip",
+    "sql": "SELECT k.n FROM OPENJSON(N'{\"items\":[{\"n\":5}]}') WITH (items NVARCHAR(MAX) '$.items' AS JSON) j CROSS APPLY OPENJSON(j.items) WITH (n INT '$.n') k"
+  },
+  {
+    "id": "cte-json",
+    "stage": "json-roundtrip",
+    "sql": "WITH c AS (SELECT id FROM OPENJSON(N'[{\"id\":4}]') WITH (id INT) j) SELECT id FROM c"
+  },
+  {
+    "id": "top-orders",
+    "stage": "business-roundtrip",
+    "sql": "SELECT TOP (5) h.SalesOrderID,h.CustomerID,h.Status FROM Sales.SalesOrderHeader h ORDER BY h.SalesOrderID"
+  },
+  {
+    "id": "detail-grain",
+    "stage": "business-roundtrip",
+    "sql": "SELECT TOP (5) h.SalesOrderID,COUNT(d.SalesOrderDetailID) AS detail_count FROM Sales.SalesOrderHeader h JOIN Sales.SalesOrderDetail d ON d.SalesOrderID=h.SalesOrderID GROUP BY h.SalesOrderID ORDER BY h.SalesOrderID"
+  },
+  {
+    "id": "line-amount",
+    "stage": "business-roundtrip",
+    "sql": "SELECT TOP (5) d.SalesOrderID,CAST(SUM(d.LineTotal) AS DECIMAL(18,2)) AS amount FROM Sales.SalesOrderDetail d GROUP BY d.SalesOrderID ORDER BY d.SalesOrderID"
+  },
+  {
+    "id": "outer-apply-missing",
+    "stage": "business-roundtrip",
+    "sql": "SELECT TOP (5) p.ProductID,x.SalesOrderDetailID FROM Production.Product p OUTER APPLY (SELECT TOP (1) d.SalesOrderDetailID FROM Sales.SalesOrderDetail d WHERE d.ProductID=p.ProductID ORDER BY d.SalesOrderDetailID) x WHERE x.SalesOrderDetailID IS NULL ORDER BY p.ProductID"
+  },
+  {
+    "id": "customer-left-null",
+    "stage": "business-roundtrip",
+    "sql": "SELECT TOP (5) c.CustomerID FROM Sales.Customer c LEFT JOIN Sales.SalesOrderHeader h ON h.CustomerID=c.CustomerID WHERE h.SalesOrderID IS NULL ORDER BY c.CustomerID"
+  },
+  {
+    "id": "header-amplification",
+    "stage": "business-roundtrip",
+    "sql": "SELECT TOP (5) h.SalesOrderID,CAST(h.SubTotal AS DECIMAL(18,2)) AS original_amount,CAST(SUM(h.SubTotal) AS DECIMAL(18,2)) AS joined_amount,COUNT(*) AS detail_count FROM Sales.SalesOrderHeader h JOIN Sales.SalesOrderDetail d ON d.SalesOrderID=h.SalesOrderID GROUP BY h.SalesOrderID,h.SubTotal HAVING COUNT(*)>1 ORDER BY h.SalesOrderID"
+  },
+  {
+    "id": "top-cte",
+    "stage": "supplement-roundtrip",
+    "sql": "WITH orders AS (SELECT 1 AS id UNION ALL SELECT 2 AS id) SELECT TOP (1) o.id FROM orders o ORDER BY o.id DESC"
+  },
+  {
+    "id": "offset-fetch",
+    "stage": "supplement-roundtrip",
+    "sql": "SELECT t.id FROM (SELECT 1 AS id UNION ALL SELECT 2 AS id) t ORDER BY t.id OFFSET 1 ROWS FETCH NEXT 1 ROWS ONLY"
+  },
+  {
+    "id": "window-frame",
+    "stage": "supplement-roundtrip",
+    "sql": "SELECT t.id,SUM(t.id) OVER (ORDER BY t.id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS running_total FROM (SELECT 1 AS id UNION ALL SELECT 2 AS id) t"
+  }
+]

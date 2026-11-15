@@ -248,6 +248,8 @@ export default function ConnectionDialog({ backendUrl, onCredentialsChanged, edi
             <div className={`test-result ${testResult.success ? 'test-success' : 'test-error'}`}>
               {testResult.success
                 ? tr("Connected ({0}ms) — {1} {2}", testResult.latency, DIALECTS.find(d => d.value === dialect)?.label ?? dialect, testResult.serverVersion)
+                : testResult.errorReason === 'CONNECTION_CONTEXT_CHANGED'
+                  ? tr("Connection context changed. Retry the test.")
                 : testResult.errorReason === 'connect-timeout'
                   // The backend owns this text and it already states the deadline; prefixing
                   // it with "Connection failed:" would read as two contradictory verdicts.

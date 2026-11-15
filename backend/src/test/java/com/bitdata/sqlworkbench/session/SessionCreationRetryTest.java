@@ -30,13 +30,18 @@ class SessionCreationRetryTest {
         ReflectionTestUtils.invokeMethod(new SqliteConfig(), "initSchema", jdbc);
         store = new SessionStore(jdbc);
         controller = new SessionController(store, mapper);
+        try {
+            var snapshot=GraphHttpFixtures.snapshot("SELECT 1","postgresql");
+            store.save(Session.builder().id("source").sqlText("SELECT 1").identityPolicy(com.bitdata.sqlworkbench.sql.diff.StructuralSqlCodec.POLICY)
+                .workspaceSnapshotJson(snapshot).fragmentTreeJson(mapper.readTree(snapshot).path("treeProjection").toString()).build());
+        } catch(Exception failure) { throw new AssertionError(failure); }
     }
     SessionController.CreateSessionRequest request(String key, String sql, SessionEditLink.Origin origin) {
-        return new SessionController.CreateSessionRequest(null, "Edited", sql, "postgresql", null, null, null, origin, key);
+        return new SessionController.CreateSessionRequest(null, "Edited", sql, "postgresql", null, null, null, origin, key, null, origin == null ? null : new IdentityContext("source",com.bitdata.sqlworkbench.sql.diff.StructuralSqlCodec.POLICY,0L));
     }
-    int count(String table) { return jdbc.queryForObject("SELECT count(*) FROM " + table, Integer.class); }
+    int count(String table) { return jdbc.queryForObject("SELECT count(*) FROM " + table + (table.equals("sessions") ? " WHERE id <> 'source'" : ""), Integer.class); }
     String key() { return UUID.randomUUID().toString(); }
-    SessionEditLink.Origin origin() { return new SessionEditLink.Origin("source", "node", "Original", "edited"); }
+    SessionEditLink.Origin origin() { return new SessionEditLink.Origin("source", GraphHttpFixtures.parentId(), "Original", com.bitdata.sqlworkbench.sql.diff.StructuralSqlCodec.canonicalize("SELECT 2","postgresql").id()); }
     void error(String code, Runnable action) {
         assertEquals(code, assertThrows(SessionStore.CreationFailure.class, action::run).code);
     }
@@ -44,13 +49,15 @@ class SessionCreationRetryTest {
         var req = request(key(), "SELECT 2", origin());
         var first = controller.create(req);
         store.updateMetadata(first.id(), "Renamed");
-        store.replaceWorkspace(first.id(), "SELECT 3", "mysql", null, "saved-graph", "saved-tree");
+        store.replaceWorkspace(new IdentityContext(first.id(),first.identityPolicy(),0L), "SELECT 3", "mysql", null, null, null);
         var replay = controller.create(req);
         assertEquals(first.id(), replay.id());
         assertEquals(first.createdAt(), replay.createdAt());
         assertEquals("Renamed", replay.name());
         assertEquals("SELECT 3", replay.sqlText());
-        assertEquals("saved-graph", replay.workspaceSnapshotJson());
+        assertNull(replay.workspaceSnapshotJson());
+        store.delete("source"); // A confirmed receipt replays before checking a now-deleted source.
+        assertEquals(first.id(),controller.create(req).id());
         assertEquals(1, count("sessions"));
         assertEquals(1, count("session_edit_links"));
         assertEquals(1, count("session_creation_receipts"));
@@ -82,8 +89,20 @@ class SessionCreationRetryTest {
         var reordered = mapper.readValue("{\"dialect\":\"postgresql\",\"sqlText\":\"\",\"name\":\"Untitled\",\"creationRequestId\":\"" + key + "\"}", SessionController.CreateSessionRequest.class);
         assertEquals(first.id(), controller.create(reordered).id());
         // Durable v1 contract: defaults, field order and UTF-8 must not drift on upgrade.
-        assertEquals("v1:eddf2ffca2c593aa24ab02ed5d13a2b916582a8e47c27164200ae487bdec0223",
+        assertEquals("v2:580c6151b1e64b6ed3165ba6e0c25582483ba0129d138052d046efef61fc2b0a",
             jdbc.queryForObject("SELECT request_fingerprint FROM session_creation_receipts", String.class));
+    }
+    @Test void historicalReceiptReplaysWithoutReinterpretingOldSnapshotOrSource() {
+        String operation=key();
+        var old=store.save(Session.builder().id("historical-target").workspaceSnapshotJson("old bytes").build());
+        var req=new SessionController.CreateSessionRequest(null,null,null,null,null,null,null,null,operation);
+        jdbc.update("INSERT INTO session_creation_receipts VALUES(?,?,?,?)",operation,
+            "v1:eddf2ffca2c593aa24ab02ed5d13a2b916582a8e47c27164200ae487bdec0223",old.id(),java.time.Instant.now().toString());
+        assertEquals(old.id(),controller.create(req).id());
+        assertEquals("old bytes",store.findById(old.id()).orElseThrow().workspaceSnapshotJson());
+        assertEquals(IdentityContext.LEGACY_POLICY,controller.create(req).identityPolicy());
+        error("CREATION_REQUEST_CONFLICT",() -> controller.create(request(operation,"SELECT 3",null)));
+        store.delete(old.id());error("CREATION_TARGET_GONE",() -> controller.create(req));
     }
     @Test void deletedAndTtlTargetsNeverReappear() {
         var req = request(key(), "SELECT 2", origin());
@@ -170,7 +189,7 @@ class SessionCreationRetryTest {
     }
     @Test void storageBusyHasAnObservableRecoverableResponse() throws Exception {
         var busyStore = mock(SessionStore.class);
-        when(busyStore.createWithOrigin(any(), any(), any(), any(), any())).thenThrow(
+        when(busyStore.createWithOrigin(any(), any(), any(), any(), any(), any(), any())).thenThrow(
             new DataAccessResourceFailureException("busy", new SQLException("database locked", "", 5)));
         MockMvcBuilders.standaloneSetup(new SessionController(busyStore, mapper)).build()
             .perform(post("/api/sessions").contentType("application/json").content(mapper.writeValueAsBytes(request(key(), "SELECT 2", null))))

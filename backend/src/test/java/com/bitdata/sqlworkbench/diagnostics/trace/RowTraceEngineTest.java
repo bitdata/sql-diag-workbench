@@ -18,6 +18,9 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class RowTraceEngineTest {
+    final com.bitdata.sqlworkbench.connection.WorkloadLeaseManager taskLeases=new com.bitdata.sqlworkbench.connection.WorkloadLeaseManager();
+    @org.junit.jupiter.api.AfterEach void closeTaskLeaseFixture(){taskLeases.close();}
+
 
     private ConnectionService connectionService;
     private DatabaseStrategyFactory strategyFactory;
@@ -32,6 +35,12 @@ class RowTraceEngineTest {
     @BeforeEach
     void setUp() throws Exception {
         connectionService = mock(ConnectionService.class);
+        lenient().when(connectionService.acquireOrdinaryWorkload()).thenAnswer(i->taskLeases.acquireOrdinary());
+        lenient().when(connectionService.openOrdinaryWithTimeout(anyString(),nullable(String.class),anyLong(),any(com.bitdata.sqlworkbench.connection.WorkloadLeaseManager.Ticket.class))).thenAnswer(i->{
+            var owner=(com.bitdata.sqlworkbench.connection.WorkloadLeaseManager.Ticket)i.getArgument(3);
+            try{return taskLeases.track(connectionService.openJdbcConnection(i.getArgument(0)),owner);}catch(Exception failed){owner.release();throw failed;}
+        });
+
         strategyFactory = mock(DatabaseStrategyFactory.class);
         strategy = mock(DatabaseStrategy.class);
         traceStore = new TraceStore();
@@ -257,7 +266,10 @@ class RowTraceEngineTest {
         String traceId = createTrace(request);
         engine.executeTraceSync(traceId, request);
 
-        verify(strategy).configureReadOnly(mockConnection);
+        var configured=org.mockito.ArgumentCaptor.forClass(Connection.class);
+        verify(strategy).configureReadOnly(configured.capture());
+        assertNotSame(mockConnection,configured.getValue(),"Read-only configuration must use the owned connection");
+        assertSame(configured.getValue(),configured.getValue().unwrap(Connection.class));
     }
 
     @Test

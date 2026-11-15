@@ -9,7 +9,7 @@ const UPDATED_AT = '2026-01-01T00:00:00.000Z'
 
 /** Build a minimal backend "create session" response body for a given id. */
 function createdSession(id: string, sqlText = '', name = id === 'sess-2' ? 'Untitled 2' : 'Untitled 1') {
-  return { id, name, sqlText, dialect: 'postgresql', updatedAt: UPDATED_AT }
+  return { id, name, sqlText, identityPolicy: 'structural-p0p1-v2', workspaceRevision: 0, dialect: 'postgresql', updatedAt: UPDATED_AT }
 }
 
 /** Render useTabs with a backend URL. localStorage is isolated per-test in beforeEach. */

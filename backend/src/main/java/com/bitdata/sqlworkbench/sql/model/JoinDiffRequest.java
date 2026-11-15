@@ -16,5 +16,10 @@ package com.bitdata.sqlworkbench.sql.model;
 public record JoinDiffRequest(
     String parentSql,
     String childSql,
-    String dialect
-) {}
+    String dialect,
+    com.bitdata.sqlworkbench.session.IdentityContext identityContext,
+    java.util.List<com.bitdata.sqlworkbench.session.NodeProof> nodes
+) implements com.bitdata.sqlworkbench.session.IdentityBoundRequest {
+    public JoinDiffRequest(String parentSql, String childSql, String dialect) {
+        this(parentSql,childSql,dialect,null,null);
+    }}

@@ -190,8 +190,10 @@ class SqlDialectResolverTest {
     }
 
     @Test
-    void oracle_usesDefaultFactory_doesNotAcceptPgDoubleColon() {
+    void oracle_usesBoundedAdapterAndStillRejectsPgDoubleColon() {
         SqlParser.Config cfg = resolver.parserConfig("oracle");
+        assertEquals(com.bitdata.sqlworkbench.sql.oracle.OracleParserAdapter.FACTORY, cfg.parserFactory());
+        assertDoesNotThrow(() -> SqlParser.create("SELECT CAST(N'中' AS NVARCHAR2(10)) FROM dual", cfg).parseQuery());
         assertThrows(Exception.class,
             () -> SqlParser.create("SELECT n::int FROM t", cfg).parseQuery(),
             "Oracle must NOT use Babel factory — negative pin (A2 narrow-surface)"
@@ -199,11 +201,13 @@ class SqlDialectResolverTest {
     }
 
     @Test
-    void sqlserver_usesDefaultFactory_doesNotAcceptPgDoubleColon() {
+    void sqlserver_usesTsqlAdapterAndStillRejectsPgDoubleColon() {
         SqlParser.Config cfg = resolver.parserConfig("sqlserver");
         assertThrows(Exception.class,
             () -> SqlParser.create("SELECT n::int FROM t", cfg).parseQuery(),
-            "SqlServer must NOT use Babel factory — negative pin (A2 narrow-surface)"
+            "T-SQL adapter must reject the PostgreSQL-only operator"
         );
+        assertDoesNotThrow(() -> SqlParser.create("SELECT '::' AS [::] -- ::\n", cfg).parseQuery());
+        assertDoesNotThrow(() -> SqlParser.create("SELECT TOP (1) N'中文' AS [value]", cfg).parseQuery());
     }
 }

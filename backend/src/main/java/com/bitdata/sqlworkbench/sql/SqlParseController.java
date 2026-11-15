@@ -38,11 +38,17 @@ public class SqlParseController {
             }
             return ResponseEntity.ok(result);
         } catch (IllegalArgumentException e) {
+            var typed=SqlSerializationException.find(e);
+            if(typed!=null)return ResponseEntity.unprocessableEntity().body(Map.of(
+                "code",SqlSerializationException.CODE,"degraded",true,"errorReason",typed.reason()));
             return ResponseEntity.badRequest().body(Map.of(
                 "code", "VALIDATION_ERROR",
                 "message", e.getMessage()
             ));
         } catch (Exception e) {
+            var typed=SqlSerializationException.find(e);
+            if(typed!=null)return ResponseEntity.unprocessableEntity().body(Map.of(
+                "code",SqlSerializationException.CODE,"degraded",true,"errorReason",typed.reason()));
             log.error("Unexpected error during SQL parse", e);
             return ResponseEntity.internalServerError().body(Map.of(
                 "code", "INTERNAL_ERROR",
@@ -84,6 +90,9 @@ public class SqlParseController {
                 "message", e.getMessage()
             ));
         } catch (Exception e) {
+            var typed=SqlSerializationException.find(e);
+            if(typed!=null)return ResponseEntity.unprocessableEntity().body(Map.of(
+                "code",SqlSerializationException.CODE,"degraded",true,"errorReason",typed.reason()));
             log.error("Decompose failed", e);
             return ResponseEntity.internalServerError().body(Map.of(
                 "code", "INTERNAL_ERROR",
@@ -116,6 +125,9 @@ public class SqlParseController {
                 "message", e.getMessage()
             ));
         } catch (Exception e) {
+            var typed=SqlSerializationException.find(e);
+            if(typed!=null)return ResponseEntity.unprocessableEntity().body(Map.of(
+                "code",SqlSerializationException.CODE,"degraded",true,"errorReason",typed.reason()));
             log.error("Get decompose options failed", e);
             return ResponseEntity.internalServerError().body(Map.of(
                 "code", "INTERNAL_ERROR",
@@ -151,11 +163,17 @@ public class SqlParseController {
                 "message", e.getMessage()
             ));
         } catch (IllegalArgumentException e) {
+            var typed=SqlSerializationException.find(e);
+            if(typed!=null)return ResponseEntity.unprocessableEntity().body(Map.of(
+                "code",SqlSerializationException.CODE,"degraded",true,"errorReason",typed.reason()));
             return ResponseEntity.badRequest().body(Map.of(
                 "code", "VALIDATION_ERROR",
                 "message", e.getMessage()
             ));
         } catch (Exception e) {
+            var typed=SqlSerializationException.find(e);
+            if(typed!=null)return ResponseEntity.unprocessableEntity().body(Map.of(
+                "code",SqlSerializationException.CODE,"degraded",true,"errorReason",typed.reason()));
             log.error("Get CTE dependencies failed", e);
             return ResponseEntity.internalServerError().body(Map.of(
                 "code", "INTERNAL_ERROR",
@@ -182,6 +200,9 @@ public class SqlParseController {
             );
             return ResponseEntity.ok(Map.of("nodes", positions));
         } catch (Exception e) {
+            var typed=SqlSerializationException.find(e);
+            if(typed!=null)return ResponseEntity.unprocessableEntity().body(Map.of(
+                "code",SqlSerializationException.CODE,"degraded",true,"errorReason",typed.reason()));
             log.error("Failed to extract SQL positions", e);
             return ResponseEntity.internalServerError().body(Map.of(
                 "code", "INTERNAL_ERROR",
@@ -213,6 +234,9 @@ public class SqlParseController {
             JoinDiffResponse result = parseService.joinDiff(request);
             return ResponseEntity.ok(result);
         } catch (Exception e) {
+            var typed=SqlSerializationException.find(e);
+            if(typed!=null)return ResponseEntity.unprocessableEntity().body(Map.of(
+                "code",SqlSerializationException.CODE,"degraded",true,"errorReason",typed.reason()));
             log.error("join-diff failed", e);
             return ResponseEntity.internalServerError().body(Map.of(
                 "code", "INTERNAL_ERROR",
@@ -249,6 +273,9 @@ public class SqlParseController {
             FragmentDiffRequest.FragmentDiffResponse result = parseService.fragmentDiff(request);
             return ResponseEntity.ok(result);
         } catch (Exception e) {
+            var typed=SqlSerializationException.find(e);
+            if(typed!=null)return ResponseEntity.unprocessableEntity().body(Map.of(
+                "code",SqlSerializationException.CODE,"degraded",true,"errorReason",typed.reason()));
             log.error("fragment-diff failed", e);
             return ResponseEntity.internalServerError().body(Map.of(
                 "code", "INTERNAL_ERROR",

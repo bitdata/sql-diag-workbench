@@ -132,6 +132,7 @@ public class SubqueryExtractionRule implements DecompositionRule {
     }
     private String key(SqlIdentifier id,int i,String dialect) {
         String v=id.names.get(i);
+        if("oracle".equalsIgnoreCase(dialect))return v;
         if("mysql".equalsIgnoreCase(dialect))return v.toLowerCase(Locale.ROOT);
         return id.isComponentQuoted(i) || id.names.size()==1 && id.getParserPosition().isQuoted()?v:v.toLowerCase(Locale.ROOT);
     }

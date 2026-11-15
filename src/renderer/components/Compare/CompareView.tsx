@@ -35,6 +35,7 @@ const ComparePane = forwardRef<CompareHandle, PaneProps>(function ComparePane(pr
   const execution = useExecution(backendUrl, target?.node.id ?? null, undefined, settings, {
     sessionId: target?.sessionId ?? null, dialect: target?.dialect ?? '', connectionId: connection?.id ?? null,
     sql: target?.node.sqlFragment,
+    revision: target?.version,
   })
   const diagnostics = usePlanDiagnostics(backendUrl,
     target && connection && !issue && target.dialect === connection.dialect && execution.planResult?.plan
@@ -94,14 +95,19 @@ const ComparePane = forwardRef<CompareHandle, PaneProps>(function ComparePane(pr
         <AnalyzeSplitButton backendUrl={backendUrl} connectionId={connection?.id ?? null} onAnalyze={run} disabled={locked || busy || !!disabledReason} />}
       <button className="toolbar-btn" disabled={locked || (!execution.loading && !execution.submitting && execution.errorReason !== 'CANCEL_UNCONFIRMED' && execution.errorReason !== 'STATUS_UNAVAILABLE')}
         onClick={() => { void execution.cancel() }}>{tr("Stop")}</button>
-      {execution.errorReason === 'STATUS_UNAVAILABLE' && <button className="toolbar-btn" disabled={locked} onClick={execution.retryStatus}>{tr("Retry status")}</button>}
+      {['STATUS_UNAVAILABLE', 'RESOURCE_CLEANUP_UNCONFIRMED'].includes(execution.errorReason ?? '') && <button className="toolbar-btn" disabled={locked} onClick={execution.retryStatus}>{tr("Retry status")}</button>}
       <span role="status" aria-label={tr("Fragment {0} execution status", side)}>
+        {execution.cleanupPending && <span>{tr('Waiting for resource cleanup confirmation')} · </span>}
         {execution.submitting ? tr("Submitting…") : execution.cancelling ? tr("Cancelling…") : execution.status ?? tr("Not run")}
         {execution.dataResult?.rows ? ` · ${execution.dataResult.rows.length} returned rows` : ''}
         {execution.dataResult?.rows ? ` · ${completenessText(execution.dataResult.resultCompleteness)}` : ''}
         {(mode === 'data' ? execution.dataResult : execution.planResult)?.timing ?
           ` · ${(mode === 'data' ? execution.dataResult : execution.planResult)!.timing!.durationMs} ms` : ''}
       </span>
+      {execution.lifecycle && <span role="status" data-error-reason={execution.errorReason ?? undefined}>
+        {tr('Resource cleanup:')} {execution.lifecycle.cleanup} · {tr('Cancellation signal:')} {execution.lifecycle.cancelSignal}
+        {execution.errorReason ? ' · ' + execution.errorReason : ''}
+      </span>}
     </div>
     <ResultsPanel result={mode === 'data' ? execution.dataResult : execution.planResult} loading={execution.loading}
       backendUrl={backendUrl} sessionId={target?.sessionId} connectionId={connection?.id}

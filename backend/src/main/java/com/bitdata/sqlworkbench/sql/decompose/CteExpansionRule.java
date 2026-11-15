@@ -129,7 +129,7 @@ public class CteExpansionRule implements DecompositionRule {
             if (!(itemNode instanceof SqlWithItem item)) continue;
 
             String alias = item.name.toString();
-            String aliasKey = alias.toUpperCase();
+            String aliasKey = CteDependencyGraph.nameKey(item.name,profile.name());
             if (emitted.contains(aliasKey)) {
                 continue;
             }
@@ -201,7 +201,7 @@ public class CteExpansionRule implements DecompositionRule {
         int memberCount = 0;
         for (SqlNode itemNode : with.withList) {
             if (!(itemNode instanceof SqlWithItem item)) continue;
-            String aliasKey = item.name.toString().toUpperCase();
+            String aliasKey = CteDependencyGraph.nameKey(item.name,profile.name());
             if (!scc.contains(aliasKey)) continue;
             String alias = item.name.toString();
             if (!first) sb.append(", ");

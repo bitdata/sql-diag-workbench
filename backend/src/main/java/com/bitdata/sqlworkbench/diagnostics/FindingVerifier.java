@@ -48,6 +48,8 @@ public class FindingVerifier {
             String dialect = connectionService.getById(connectionId)
                 .map(c -> c.dialect())
                 .orElse("postgresql");
+            if ("oracle".equalsIgnoreCase(dialect)) return new VerifyResult(FindingStatus.SUSPECTED,
+                "Oracle diagnostic verification is unavailable", "ORACLE_DIAGNOSTICS_UNSUPPORTED", true);
             DatabaseStrategy strategy = strategyFactory.get(dialect);
 
             // S5 — validate the verification SQL as a single SELECT BEFORE

@@ -26,8 +26,13 @@ public record FragmentDiffRequest(
     String type,           // "join" | "where" | "aggregate"
     String parentSql,
     String childSql,
-    String dialect
-) {
+    String dialect,
+    com.bitdata.sqlworkbench.session.IdentityContext identityContext,
+    java.util.List<com.bitdata.sqlworkbench.session.NodeProof> nodes
+) implements com.bitdata.sqlworkbench.session.IdentityBoundRequest {
+    public FragmentDiffRequest(String type, String parentSql, String childSql, String dialect) {
+        this(type,parentSql,childSql,dialect,null,null);
+    }
     public static final String TYPE_JOIN = "join";
     public static final String TYPE_WHERE = "where";
     public static final String TYPE_AGGREGATE = "aggregate";

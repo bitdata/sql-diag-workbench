@@ -10,8 +10,14 @@ public record TraceRequest(
     Integer queryTimeoutSeconds,
     TraceMode mode,
     @com.fasterxml.jackson.databind.annotation.JsonDeserialize(using=StrictDecimalStringDeserializer.class) String expectedMax,
-    List<com.bitdata.sqlworkbench.sql.model.DecompositionResult.Output> transformEdges
+    List<com.bitdata.sqlworkbench.sql.model.DecompositionResult.Output> transformEdges,
+    DiagnosticContext diagnosticContext,
+    String sourceReceiptId
 ) {
+    public TraceRequest(String connectionId,String tree,List<KeyValue> keys,Integer timeout,TraceMode mode,String expectedMax,
+            List<com.bitdata.sqlworkbench.sql.model.DecompositionResult.Output> transforms) {
+        this(connectionId,tree,keys,timeout,mode,expectedMax,transforms,null,null);
+    }
     public TraceRequest(String connectionId, String tree, List<KeyValue> keys, Integer timeout) {
         this(connectionId, tree, keys, timeout, null, null, null);
     }
@@ -22,13 +28,16 @@ public record TraceRequest(
         if (connectionId == null || connectionId.isBlank()) {
             throw new IllegalArgumentException("connectionId is required");
         }
-        if (fragmentTreeJson == null || fragmentTreeJson.isBlank()) {
+        if (sourceReceiptId==null && (fragmentTreeJson == null || fragmentTreeJson.isBlank())) {
             throw new IllegalArgumentException("fragmentTreeJson is required");
         }
-        if (keys == null || keys.isEmpty()) {
+        if (sourceReceiptId==null && (keys == null || keys.isEmpty())) {
             throw new IllegalArgumentException("At least one key is required");
         }
-        keys = List.copyOf(keys);
+        if(sourceReceiptId!=null && (sourceReceiptId.isBlank()||diagnosticContext==null||fragmentTreeJson!=null||keys!=null
+            ||expectedMax!=null||transformEdges!=null||mode!=TraceMode.CARDINALITY))
+            throw new IllegalArgumentException("SOURCE_RECEIPT_REQUEST_INVALID");
+        keys = keys==null?List.of():List.copyOf(keys);
         transformEdges = transformEdges == null ? List.of() : List.copyOf(transformEdges);
         if(transformEdges.size()>512) throw new IllegalArgumentException("Too many transform outputs");
         mode = mode == null ? TraceMode.EXISTENCE : mode;

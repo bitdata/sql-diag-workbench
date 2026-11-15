@@ -3,7 +3,7 @@ import { renderHook, act } from '@testing-library/react'
 import { useWorkspacePersistence, workspacePayload } from '../useWorkspacePersistence'
 import type { Tab } from '../../types/tab'
 import type { SessionWorkspaceState } from '../../types/session'
-const ws = (id: string, sql = 'SELECT 1'): SessionWorkspaceState => ({ sessionId:id, tabName:id, sql,
+const ws = (id: string, sql = 'SELECT 1'): SessionWorkspaceState => ({ sessionId:id, tabName:id, sql, identityPolicy: 'structural-p0p1-v2', workspaceRevision:0,
   isDirty:true, lastSavedAt:null, connectionId:null, dialect:'postgresql', fragmentTreeJson:null,
   selectedNodeId:null, viewerMode:'input', workspaceMode:'data', hydration:'ready' })
 const tab = (workspace: SessionWorkspaceState): Tab => ({ sessionId:workspace.sessionId, name:workspace.tabName,
@@ -14,7 +14,7 @@ describe('workspace save queue', () => {
   it('serializes changes per session and does not lose a background tab write', async () => {
     let release!: (res: Response) => void
     const fetch = vi.spyOn(globalThis,'fetch').mockImplementationOnce(() => new Promise(r => { release = r }))
-      .mockResolvedValue(new Response('{}'))
+      .mockImplementation(async (input, init) => { const body=JSON.parse(init!.body as string); return ack(String(input).includes('/b/') ? 'b' : 'a',body.identityContext.workspaceRevision+1) })
     const status = vi.fn()
     const a = ws('a')
     const { rerender } = renderHook(({ tabs }) => useWorkspacePersistence('http://localhost:8080',tabs,status),
@@ -25,25 +25,25 @@ describe('workspace save queue', () => {
     // B writes while A remains in flight; another A cannot start yet.
     expect(fetch).toHaveBeenCalledTimes(2)
     expect(fetch.mock.calls[1][0]).toContain('/b/workspace')
-    await act(async () => { release(new Response('{}')); await Promise.resolve() })
+    await act(async () => { release(ack('a',1)); await Promise.resolve() })
     expect(fetch).toHaveBeenCalledTimes(3)
     expect(JSON.parse(fetch.mock.calls[2][1]!.body as string).sqlText).toBe('SELECT 2')
   })
   it('blocks failed hydration and corrupt recovery, and never writes clean loaded state', async () => {
-    const fetch = vi.spyOn(globalThis,'fetch').mockResolvedValue(new Response('{}'))
+    const fetch = vi.spyOn(globalThis,'fetch').mockImplementation(async (input, init) => { const body=JSON.parse(init!.body as string); return ack(String(input).includes('/b/') ? 'b' : 'a',body.identityContext.workspaceRevision+1) })
     renderHook(() => useWorkspacePersistence('http://localhost:8080',
       [tab({ ...ws('a'), hydration:'failed' }),tab({ ...ws('b'),recoveryBlocked:true }),tab({ ...ws('c'),isDirty:false })],vi.fn()))
     await act(async () => { await vi.advanceTimersByTimeAsync(900) })
     expect(fetch).not.toHaveBeenCalled()
   })
   it('keeps failed data until manual retry and uses the latest snapshot', async () => {
-    const fetch = vi.spyOn(globalThis,'fetch').mockResolvedValueOnce(new Response('',{status:503})).mockResolvedValue(new Response('{}'))
+    const fetch = vi.spyOn(globalThis,'fetch').mockResolvedValueOnce(new Response('',{status:503})).mockImplementation(async (input, init) => { const body=JSON.parse(init!.body as string); return ack(String(input).includes('/b/') ? 'b' : 'a',body.identityContext.workspaceRevision+1) })
     const status = vi.fn(), workspace = ws('a')
     const { result } = renderHook(() => useWorkspacePersistence('http://localhost:8080',[tab(workspace)],status))
     await act(async () => { await vi.advanceTimersByTimeAsync(450) })
     expect(status).toHaveBeenLastCalledWith('a',workspacePayload(workspace),'failed','HTTP 503')
     await act(async () => { await result.current('a') })
-    expect(status).toHaveBeenLastCalledWith('a',workspacePayload(workspace),'saved')
+    expect(status).toHaveBeenLastCalledWith('a',workspacePayload(workspace),'saved',undefined,1)
     expect(fetch).toHaveBeenCalledTimes(2)
   })
   it('does not retry a deleted session after a late write response', async () => {
@@ -59,3 +59,5 @@ describe('workspace save queue', () => {
     expect(status).not.toHaveBeenCalledWith('a',expect.anything(),'failed',expect.anything())
   })
 })
+
+function ack(id: string, revision: number) { return new Response(JSON.stringify({id,identityPolicy:'structural-p0p1-v2',workspaceRevision:revision})) }

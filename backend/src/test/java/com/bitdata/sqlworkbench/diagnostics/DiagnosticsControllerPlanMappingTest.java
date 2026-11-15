@@ -24,6 +24,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @WebMvcTest(DiagnosticsController.class)
 class DiagnosticsControllerPlanMappingTest {
+    @org.springframework.boot.test.mock.mockito.MockBean
+    private com.bitdata.sqlworkbench.connection.ConnectionService connections;
 
     @Autowired MockMvc mockMvc;
     @Autowired ObjectMapper objectMapper;
@@ -35,6 +37,18 @@ class DiagnosticsControllerPlanMappingTest {
     @MockBean TraceStore traceStore;
     @MockBean DiagnosticReportStore reportStore;
     @MockBean FindingVerifier findingVerifier;
+
+    @Test void oracleMappingIsAnObservableRefusalEvenWithRetainedPlan() throws Exception {
+        when(executionEngine.resolvePlanObservation("oracle-exec","SELECT 1 FROM dual","oracle-conn",null))
+            .thenReturn(new ExecutionEngine.PlanObservation("VERIFIED",null,verifiedResult("oracle-exec")));
+        when(mappingService.map(eq("oracle-exec"),eq("oracle"),eq("SELECT 1 FROM dual"),isNull(),isNull(),anyList()))
+            .thenReturn(mapping("oracle-exec","oracle",true,"ORACLE_PLAN_MAPPING_UNSUPPORTED"));
+        mockMvc.perform(post("/api/diagnostics/plan-mapping").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"executionId\":\"oracle-exec\",\"sql\":\"SELECT 1 FROM dual\",\"dialect\":\"oracle\",\"connectionId\":\"oracle-conn\"}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.degraded").value(true))
+            .andExpect(jsonPath("$.errorReason").value("ORACLE_PLAN_MAPPING_UNSUPPORTED"))
+            .andExpect(jsonPath("$.edges").isEmpty());
+    }
 
     @Test
     void forwardsExecutionScopeAndPostgresDialectToMappingService() throws Exception {

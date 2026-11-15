@@ -16,8 +16,13 @@ public record DecomposeRequest(
     String dialect,
     String ruleName,
     String sourceNodeId,
-    String connectionId
-) {
+    String connectionId,
+    com.bitdata.sqlworkbench.session.IdentityContext identityContext,
+    java.util.List<com.bitdata.sqlworkbench.session.NodeProof> nodes
+) implements com.bitdata.sqlworkbench.session.IdentityBoundRequest {
+    public DecomposeRequest(String sqlFragment, String dialect, String ruleName, String sourceNodeId, String connectionId) {
+        this(sqlFragment,dialect,ruleName,sourceNodeId,connectionId,null,null);
+    }
     public DecomposeRequest(String sqlFragment, String dialect, String ruleName, String sourceNodeId) {
         this(sqlFragment, dialect, ruleName, sourceNodeId, null);
     }

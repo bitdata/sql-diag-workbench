@@ -15,6 +15,18 @@ function deferred<T>() {
 describe('async request ownership', () => {
   beforeEach(() => { vi.useFakeTimers(); vi.mocked(apiFetch).mockReset() })
   afterEach(() => { vi.useRealTimers() })
+  it('discards an old plan after the same session ID is recreated with another instance', async () => {
+    const pending = deferred<Response>()
+    vi.mocked(apiFetch).mockReturnValue(pending.promise)
+    const { result, rerender } = renderHook(({ instanceId }) => useExecution('http://backend', '$editor', undefined, undefined,
+      { sessionId: 'same', dialect: 'sqlserver', connectionId: 'native', sql: 'SELECT 1', instanceId }), { initialProps: { instanceId: 'first' } })
+    let done!: Promise<unknown>
+    act(() => { done = result.current.analyze('SELECT 1', 'native') })
+    rerender({ instanceId: 'replacement' })
+    await act(async () => { pending.resolve(response({ executionId: 'old' })); await done })
+    expect(result.current.planResult).toBeNull()
+    expect(result.current.status).toBeNull()
+  })
 
   it('keeps a completed query with its submitting node after selection changes', async () => {
     vi.mocked(apiFetch).mockResolvedValueOnce(response({ executionId: 'original' }))

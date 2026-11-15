@@ -22,6 +22,11 @@ public class ConnectionStore {
         this.jdbc = jdbc;
     }
 
+    /** Must be the first SQL in a caller-owned read/modify/write transaction. */
+    public void reserveWrite() {
+        com.bitdata.sqlworkbench.storage.SqliteWriteReservation.acquire(jdbc);
+    }
+
     public List<ConnectionConfig> findAll() {
         return jdbc.query(
             "SELECT id, name, host, port, database, username, dialect, keychain_ref, readonly, created_at, updated_at, connection_type, trust_server_certificate FROM connections ORDER BY name",

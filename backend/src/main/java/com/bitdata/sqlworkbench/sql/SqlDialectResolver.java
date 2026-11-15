@@ -78,7 +78,8 @@ public class SqlDialectResolver {
         return SqlParser.config()
             // MySQL table/alias spelling can be case-sensitive on the server.
             // Folding here corrupts executable fragments on lower_case_table_names=0.
-            .withUnquotedCasing("mysql".equalsIgnoreCase(name) ? Casing.UNCHANGED : Casing.TO_UPPER)
+            .withUnquotedCasing("mysql".equalsIgnoreCase(name) || "sqlserver".equalsIgnoreCase(name)
+                ? Casing.UNCHANGED : Casing.TO_UPPER)
             .withCaseSensitive(profile.caseSensitive())
             .withQuoting(quotingFor(profile.quoteChar()))
             .withConformance(profile.conformance())

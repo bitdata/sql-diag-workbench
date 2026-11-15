@@ -1,10 +1,12 @@
+import { IDENTITY_POLICY } from './workspaceIdentity'
 import { sha256 } from './sha256'
 import type { FragmentNode, RuleResult } from '../types/fragment'
 import type { SessionWorkspaceState } from '../types/session'
 import { createDAGState, appliedRuleKey, indexTreeIntoDAG, type DAGState } from '../hooks/dagState'
 
 export interface WorkspaceSnapshot {
-  version: 1 | 2
+  version: 1 | 2 | 3
+  identityPolicy?: string
   parsedSql: string
   dialect: string
   graph: null | {
@@ -24,7 +26,7 @@ export function snapshotWorkspace(ws: SessionWorkspaceState, tree: FragmentNode 
                                   selectedNodeId: string | null, parsedSql: string, parsedDialect = ws.dialect): string {
   const records = [...dag.ruleResults.values()].map(r => r.status ? r : { ...r, status: 'LEGACY' as const, outputs: [], issues: [{ code: 'LEGACY_TRANSFORM_UNKNOWN', message: 'No verified experiment description' }] })
   const snapshot: WorkspaceSnapshot = {
-    version: 2, parsedSql, dialect: parsedDialect,
+    version: 3, identityPolicy: IDENTITY_POLICY, parsedSql, dialect: tree ? parsedDialect : ws.dialect,
     graph: tree ? {
       rootNodeId: tree.id,
       nodes: [...dag.nodeMap.values()].map(node => ({ ...node, children: [], parentIds: [] })),
@@ -44,7 +46,8 @@ function validNode(n: FragmentNode): boolean {
 /** Throw before any state is applied; corrupt data never becomes an autosave source. */
 export function readSnapshot(raw: string): { snapshot: WorkspaceSnapshot; dag: DAGState; selectionReason: string | null } {
   const s = JSON.parse(raw) as WorkspaceSnapshot
-  if (!s || ![1, 2].includes(s.version)) throw new Error('Unsupported workspace snapshot version')
+  if (!s || ![1, 2, 3].includes(s.version)) throw new Error('Unsupported workspace snapshot version')
+  if (s.version === 3 && s.identityPolicy !== IDENTITY_POLICY) throw new Error('Unsupported identity policy')
   if (!['input', 'browse'].includes(s.viewerMode) || !['data', 'performance'].includes(s.workspaceMode)
       || typeof s.parsedSql !== 'string' || !['postgresql', 'mysql', 'sqlserver', 'oracle'].includes(s.dialect)
       || (s.selectedNodeId !== null && typeof s.selectedNodeId !== 'string')) throw new Error('Invalid workspace context')
@@ -87,7 +90,7 @@ export function readSnapshot(raw: string): { snapshot: WorkspaceSnapshot; dag: D
       || new Set(r.childIds).size !== r.childIds.length) throw new Error('Invalid rule result')
     const key = appliedRuleKey(r.sourceNodeId, r.ruleName)
     if (dag.ruleResults.has(key)) throw new Error('Duplicate rule result')
-    if (s.version === 2 && r.status !== 'LEGACY') {
+    if (s.version >= 2 && r.status !== 'LEGACY') {
       if (!['COMPLETE', 'PARTIAL', 'NOT_APPLICABLE', 'FAILED'].includes(r.status ?? '') || !Array.isArray(r.outputs) || !Array.isArray(r.issues)
         || r.sourceSqlHash !== sha256(dag.nodeMap.get(r.sourceNodeId)!.sqlFragment)) throw new Error('Invalid transform source or status')
       const positions = new Set<number>(), targets = new Set<string>()

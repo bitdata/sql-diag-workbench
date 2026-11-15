@@ -109,6 +109,21 @@ public class SqliteConfig {
                 .noneMatch(c -> "workspace_snapshot_json".equals(c.get("name")))) {
             jdbc.execute("ALTER TABLE sessions ADD COLUMN workspace_snapshot_json TEXT");
         }
+        if (jdbc.queryForList("PRAGMA table_info(sessions)").stream()
+                .noneMatch(c -> "identity_policy".equals(c.get("name")))) {
+            jdbc.execute("ALTER TABLE sessions ADD COLUMN identity_policy TEXT NOT NULL DEFAULT 'unversioned-legacy'");
+        }
+        if (jdbc.queryForList("PRAGMA table_info(sessions)").stream()
+                .noneMatch(c -> "workspace_revision".equals(c.get("name")))) {
+            jdbc.execute("ALTER TABLE sessions ADD COLUMN workspace_revision INTEGER NOT NULL DEFAULT 0 CHECK(workspace_revision>=0)");
+        }
+        if (jdbc.queryForList("PRAGMA table_info(sessions)").stream()
+                .noneMatch(c -> "workspace_instance_id".equals(c.get("name")))) {
+            jdbc.execute("ALTER TABLE sessions ADD COLUMN workspace_instance_id TEXT");
+        }
+        jdbc.update("UPDATE sessions SET workspace_instance_id=lower(hex(randomblob(16))) WHERE workspace_instance_id IS NULL");
+        jdbc.execute("CREATE TRIGGER IF NOT EXISTS session_instance_create AFTER INSERT ON sessions WHEN NEW.workspace_instance_id IS NULL BEGIN UPDATE sessions SET workspace_instance_id=lower(hex(randomblob(16))) WHERE id=NEW.id; END");
+        jdbc.execute("CREATE TRIGGER IF NOT EXISTS session_instance_immutable BEFORE UPDATE OF workspace_instance_id ON sessions WHEN OLD.workspace_instance_id IS NOT NULL AND NEW.workspace_instance_id IS NOT OLD.workspace_instance_id BEGIN SELECT RAISE(ABORT,'WORKSPACE_INSTANCE_IMMUTABLE'); END");
         jdbc.execute("""
             CREATE TABLE IF NOT EXISTS session_edit_links (
                 sequence INTEGER PRIMARY KEY AUTOINCREMENT,

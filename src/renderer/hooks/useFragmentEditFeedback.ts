@@ -1,3 +1,6 @@
+import { identityContext } from '../utils/workspaceIdentity'
+import type { IdentityContext } from '../types/session'
+import type { WorkspaceMode } from '../types/mode'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { isWorkspaceExitLocked } from '../utils/workspaceExitGate'
 import type { FragmentNode } from '../types/fragment'
@@ -7,6 +10,8 @@ import { createTabIntent, type TabCreationIntent, type UseTabsApi } from './useT
 
 type CompletedEdit = Extract<UserEditOutcome, { status: 'EDIT' }>
 interface EditContext {
+  mode: WorkspaceMode
+  identityContext?: IdentityContext
   sourceSessionId: string
   sourceTabName: string
   sourceTree: FragmentNode
@@ -17,6 +22,7 @@ interface EditContext {
   connectionId?: string | null
 }
 type Recovery = { stage: 'submit'; context: EditContext } |
+  { stage: 'persist'; context: EditContext; outcome: CompletedEdit } |
   { stage: 'open'; context: EditContext; outcome: CompletedEdit; intent: TabCreationIntent }
 interface Feedback {
   label: string
@@ -30,7 +36,7 @@ interface Options {
   tree: FragmentNode | null
   nodeMap: Map<string, FragmentNode>
   dialect: string
-  submit: (id: string, sql: string, description: string, dialect: string) => Promise<UserEditOutcome>
+  submit: (id: string, sql: string, description: string, dialect: string, context?: IdentityContext) => Promise<UserEditOutcome>
   record: (link: EditLink) => void
 }
 
@@ -112,19 +118,40 @@ export function useFragmentEditFeedback(options: Options) {
     return true
   }, [blockedReason])
 
-  const submitContext = useCallback(async (context: EditContext): Promise<boolean> => {
-    const recovery: Recovery = { stage: 'submit', context }
-    const outcome = await latest.current.submit(context.fragId, context.newSql, context.description, context.dialect)
-    if (!mounted.current) return false
-    if (outcome.status === 'FAILED') {
-      setFeedback({ label: 'Could not confirm the edit result', message: outcome.reason,
+  const prepareCompleted = useCallback(async (context: EditContext, outcome: CompletedEdit): Promise<boolean> => {
+    const recovery: Recovery = { stage: 'persist', context, outcome }
+    const sourceChanged = blockedReason(recovery)
+    if (sourceChanged) {
+      setFeedback({ label: 'Edit completed; new tab could not be opened', message: sourceChanged,
         severity: 'error', sourceSessionId: context.sourceSessionId, recovery })
-      // Close the Radix scrim so the owned feedback/recovery is reachable.
-      // The original payload remains in recovery, even when the request result is unknown.
       return true
     }
-    if (outcome.status === 'EDIT') {
+      // Persist the source graph before creating a durable cross-session origin.
+      // A conflict keeps this edit payload available; it never triggers a forced overwrite.
+      let flushed: Awaited<ReturnType<NonNullable<UseTabsApi['flushWorkspaces']>>> | undefined
+      try {
+        flushed = await latest.current.tabs.flushWorkspaces?.()
+        const source = latest.current.tabs.tabs.find(t => t.sessionId === context.sourceSessionId)
+        context.identityContext = identityContext(source?.workspace)
+      } catch (error) {
+        if (mounted.current) setFeedback({ label: 'Could not confirm the edit result',
+          message: `The source exploration could not be saved. The edit draft is preserved. ${error instanceof Error ? error.message : String(error)}`,
+          severity: 'error', sourceSessionId: context.sourceSessionId, recovery })
+        return true
+      }
+      if (!mounted.current) return false
+      if (!flushed || !flushed.savedSessionIds.includes(context.sourceSessionId)
+          || flushed.workspaceRevisions?.[context.sourceSessionId] === undefined) {
+        setFeedback({ label: 'Could not confirm the edit result', message: 'Save the source exploration before opening the edited SQL. The edit draft is preserved.',
+          severity: 'error', sourceSessionId: context.sourceSessionId, recovery })
+        return true
+      }
+      context.identityContext = { ...context.identityContext,
+        workspaceRevision: flushed.workspaceRevisions[context.sourceSessionId] }
+
       const intent = createTabIntent(outcome.sql, { name: context.description.trim() || 'Edited fragment', dialect: context.dialect, connectionId: context.connectionId,
+        mode: context.mode,
+        identityContext: context.identityContext,
         editOrigin: { sourceNodeId: context.fragId, sourceSessionId: context.sourceSessionId,
           sourceTabName: context.sourceTabName, targetNodeId: outcome.nodeId } })
       // Switching/replacing the source while saving cannot silently attribute a new result to another tab.
@@ -136,14 +163,41 @@ export function useFragmentEditFeedback(options: Options) {
       }
       await openCompleted(context, outcome, intent)
       return true
+  }, [blockedReason, openCompleted])
+
+  const submitContext = useCallback(async (context: EditContext): Promise<boolean> => {
+    const recovery: Recovery = { stage: 'submit', context }
+    try {
+      const flushed = await latest.current.tabs.flushWorkspaces?.()
+      const revision = flushed?.workspaceRevisions?.[context.sourceSessionId]
+      if (!flushed?.savedSessionIds.includes(context.sourceSessionId) || revision === undefined)
+        throw new Error('Save the source exploration before editing. The edit draft is preserved.')
+      const blocked = blockedReason(recovery)
+      if (blocked) throw new Error(blocked)
+      context.identityContext = { ...identityContext(latest.current.tabs.tabs.find(t => t.sessionId === context.sourceSessionId)?.workspace), workspaceRevision: revision }
+    } catch (error) {
+      if (mounted.current) setFeedback({ label: 'Could not confirm the edit result', message: error instanceof Error ? error.message : String(error),
+        severity: 'error', sourceSessionId: context.sourceSessionId, recovery })
+      return true
     }
+    if (!mounted.current) return false
+    const outcome = await latest.current.submit(context.fragId, context.newSql, context.description, context.dialect, context.identityContext)
+    if (!mounted.current) return false
+    if (outcome.status === 'FAILED') {
+      setFeedback({ label: 'Could not confirm the edit result', message: outcome.reason,
+        severity: 'error', sourceSessionId: context.sourceSessionId, recovery })
+      // Close the Radix scrim so the owned feedback/recovery is reachable.
+      // The original payload remains in recovery, even when the request result is unknown.
+      return true
+    }
+    if (outcome.status === 'EDIT') return prepareCompleted(context,outcome)
     setFeedback(outcome.status === 'NAVIGATE' ? null : {
       label: outcome.status === 'NO_CHANGE' ? 'No changes to open' : 'This SQL edit is not supported',
       message: outcome.status === 'NO_CHANGE' ? NO_CHANGE : `${UNSUPPORTED}${outcome.reason}`,
       severity: outcome.status === 'NO_CHANGE' ? 'info' : 'warning', sourceSessionId: context.sourceSessionId,
     })
     return true
-  }, [blockedReason, openCompleted])
+  }, [prepareCompleted, blockedReason])
 
   const execute = useCallback(async (action: () => Promise<boolean>) => {
     if (busy.current) return false
@@ -165,6 +219,7 @@ export function useFragmentEditFeedback(options: Options) {
       return true
     }
     const context: EditContext = { sourceSessionId: sourceTab.sessionId, sourceTabName: sourceTab.name,
+      mode: now.tabs.getMode?.(sourceTab.sessionId) ?? sourceTab.workspace.workspaceMode,
       sourceTree: now.tree, fragId, newSql, description, dialect: now.dialect, connectionId: now.tabs.activeWorkspace?.connectionId ?? null }
     return execute(() => submitContext(context))
   }, [execute, submitContext])
@@ -180,9 +235,10 @@ export function useFragmentEditFeedback(options: Options) {
     setPending(true)
     try {
       if (recovery.stage === 'open') await openCompleted(recovery.context, recovery.outcome, recovery.intent)
+      else if (recovery.stage === 'persist') await prepareCompleted(recovery.context,recovery.outcome)
       else await submitContext(recovery.context)
     } finally { busy.current = false; if (mounted.current) setPending(false) }
-  }, [feedback, blockedReason, openCompleted, submitContext])
+  }, [feedback, blockedReason, openCompleted, prepareCompleted, submitContext])
 
   return { feedback, pending, save, retry, dismiss: () => { if (!busy.current) setFeedback(null) },
     blocked: feedback?.recovery ? blockedReason(feedback.recovery) : null }

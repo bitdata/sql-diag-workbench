@@ -33,8 +33,14 @@ public class FragmentController {
         String parentFragmentId,
         List<String> dagContextIds,
         String dialect,
-        String description
-    ) {}
+        String description,
+        com.bitdata.sqlworkbench.session.IdentityContext identityContext,
+        java.util.List<com.bitdata.sqlworkbench.session.NodeProof> nodes
+    ) implements com.bitdata.sqlworkbench.session.IdentityBoundRequest {
+        public CreateUserEditRequest(String sql, String parentFragmentId, List<String> dagContextIds, String dialect, String description) {
+            this(sql,parentFragmentId,dagContextIds,dialect,description,null,null);
+        }
+    }
 
     @PostMapping("/create-user-edit")
     public ResponseEntity<?> createUserEdit(@RequestBody CreateUserEditRequest request) {

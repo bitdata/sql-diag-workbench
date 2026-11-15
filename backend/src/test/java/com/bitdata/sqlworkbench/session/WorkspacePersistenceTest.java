@@ -21,7 +21,7 @@ class WorkspacePersistenceTest {
         ReflectionTestUtils.invokeMethod(new SqliteConfig(), "initSchema", jdbc);
         store = new SessionStore(jdbc);
     }
-    Session create(String id) { return store.save(Session.builder().id(id).name(id).sqlText("SELECT 1").build()); }
+    Session create(String id) { return store.save(Session.builder().id(id).name(id).identityPolicy(com.bitdata.sqlworkbench.sql.diff.StructuralSqlCodec.POLICY).sqlText("SELECT 1").build()); }
     SessionEditLink.Origin origin() { return new SessionEditLink.Origin("source", "same-node", "source", "edited-node"); }
 
     @Test void migrationPreservesLegacyDataAndIsIdempotent() {
@@ -35,15 +35,15 @@ class WorkspacePersistenceTest {
     }
     @Test void sqlSnapshotAndTreeReplaceTogetherAndNeverResurrect() {
         create("s");
-        store.replaceWorkspace("s", "SELECT 2", "postgresql", null, "snapshot", "tree");
+        store.replaceWorkspace(new IdentityContext("s",com.bitdata.sqlworkbench.sql.diff.StructuralSqlCodec.POLICY,0L), "SELECT 2", "postgresql", null, "snapshot", "tree");
         var reopened = new SessionStore(jdbc).findById("s").orElseThrow();
         assertEquals("SELECT 2", reopened.sqlText());
         assertEquals("snapshot", reopened.workspaceSnapshotJson());
         assertEquals("tree", reopened.fragmentTreeJson());
-        store.replaceWorkspace("s", "", "postgresql", null, null, null);
+        store.replaceWorkspace(new IdentityContext("s",com.bitdata.sqlworkbench.sql.diff.StructuralSqlCodec.POLICY,1L), "", "postgresql", null, null, null);
         assertNull(store.findById("s").orElseThrow().fragmentTreeJson());
         store.delete("s");
-        assertTrue(store.replaceWorkspace("s", "late", "postgresql", null, null, null).isEmpty());
+        assertEquals("WORKSPACE_NOT_FOUND",assertThrows(WorkspaceIdentity.Failure.class, () -> store.replaceWorkspace(new IdentityContext("s",com.bitdata.sqlworkbench.sql.diff.StructuralSqlCodec.POLICY,2L), "late", "postgresql", null, null, null)).code);
     }
     @Test void originInsertFailureRollsBackTargetCreation() {
         create("source");
@@ -69,10 +69,10 @@ class WorkspacePersistenceTest {
     }
     @Test void sameNodeIdsAcrossSessionsRemainIndependentAndNameUpdatesPreserveGraph() {
         create("source");
-        store.createWithOrigin(Session.builder().id("t1").name("t1").build(), origin());
+        store.createWithOrigin(Session.builder().id("t1").identityPolicy(com.bitdata.sqlworkbench.sql.diff.StructuralSqlCodec.POLICY).name("t1").build(), origin());
         store.createWithOrigin(Session.builder().id("t2").name("t2").build(), origin());
         assertEquals(2, store.editLinks(List.of("source")).size());
-        store.replaceWorkspace("t1", "SELECT 2", "postgresql", null, "snapshot", "tree");
+        store.replaceWorkspace(new IdentityContext("t1",com.bitdata.sqlworkbench.sql.diff.StructuralSqlCodec.POLICY,0L), "SELECT 2", "postgresql", null, "snapshot", "tree");
         store.updateMetadata("t1", "renamed");
         assertEquals("snapshot", store.findById("t1").orElseThrow().workspaceSnapshotJson());
         assertEquals("renamed", store.editLinks(List.of("t1")).get(0).targetTabName());
@@ -81,8 +81,9 @@ class WorkspacePersistenceTest {
         var mapper = new ObjectMapper();
         var controller = new SessionController(store, mapper);
         create("s");
-        assertThrows(ResponseStatusException.class, () -> controller.workspace("s", mapper.readTree("{\"sqlText\":\"\"}")));
-        assertThrows(ResponseStatusException.class, () -> controller.workspace("s", mapper.valueToTree(java.util.Map.of(
-            "sqlText", "x", "dialect", "postgresql", "connectionId", "", "workspaceSnapshotJson", "{\"version\":99}"))));
+        assertThrows(WorkspaceIdentity.Failure.class, () -> controller.workspace("s", mapper.readTree("{\"sqlText\":\"\"}")));
+        store.save(Session.builder().id("current").identityPolicy(com.bitdata.sqlworkbench.sql.diff.StructuralSqlCodec.POLICY).build());
+        assertThrows(ResponseStatusException.class, () -> controller.workspace("current", mapper.valueToTree(java.util.Map.of(
+            "identityContext", new IdentityContext("current",com.bitdata.sqlworkbench.sql.diff.StructuralSqlCodec.POLICY,0L), "sqlText", "x", "dialect", "postgresql", "connectionId", "", "workspaceSnapshotJson", "{\"version\":99}"))));
     }
 }

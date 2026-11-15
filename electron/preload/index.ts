@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { ExitResult, ExitDecision } from '../workspace-exit'
 
 export interface BackendStatusEvent {
-  status: 'starting' | 'running' | 'stopped' | 'crashed' | 'error'
+  status: 'starting' | 'running' | 'stopping' | 'stopped' | 'crashed' | 'error'
   error?: string
   errorReason?: string
   degraded?: boolean

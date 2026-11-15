@@ -5,6 +5,37 @@ import { useExecution } from '../useExecution'
 import { mockFetchResponses, resetMocks } from '../../test/testUtils'
 
 describe('useExecution', () => {
+  it('keeps both tab results across restore epochs and clears only the reparsed workspace', async () => {
+    const completed = (id: string) => ({ body: { executionId: id, status: 'COMPLETED', rows: [[1]], rowCount: 1,
+      columns: [{ name: 'id', type: 'integer' }], timing: { durationMs: 1 }, error: null,
+      plan: { operation: id, children: [] } } })
+    const a = { sessionId: 'a', instanceId: 'a-instance', dialect: 'postgresql', connectionId: 'conn-1', sql: 'SELECT 1', revision: 1, openSessionIds: ['a', 'b'] }
+    const b = { ...a, sessionId: 'b', instanceId: 'b-instance', revision: 2 }
+    mockFetchResponses({ body: { executionId: 'plan-a' } }, completed('plan-a'),
+      { body: { executionId: 'data-a' } }, completed('data-a'),
+      { body: { executionId: 'plan-b' } }, completed('plan-b'))
+    const { result, rerender } = renderHook(context => useExecution('http://localhost:8080', 'same-node', undefined, undefined, context), { initialProps: a })
+    await act(async () => { await result.current.analyze('SELECT 1', 'conn-1') })
+    await advanceAndFlush(500)
+    await act(async () => { await result.current.execute('SELECT 1', 'conn-1') })
+    await advanceAndFlush(500)
+    expect(result.current.planResult?.executionId).toBe('plan-a')
+    rerender(b)
+    expect(result.current.planResult).toBeNull()
+    await act(async () => { await result.current.analyze('SELECT 1', 'conn-1') })
+    await advanceAndFlush(500)
+    rerender({ ...a, revision: 3 })
+    expect(result.current.planResult?.executionId).toBe('plan-a')
+    expect(result.current.dataResult?.executionId).toBe('data-a')
+    rerender({ ...a, revision: 3, sql: 'SELECT 2' })
+    expect(result.current.planResult).toBeNull()
+    rerender({ ...a, revision: 4 })
+    expect(result.current.planResult).toBeNull()
+    rerender({ ...b, revision: 5 })
+    expect(result.current.planResult?.executionId).toBe('plan-b')
+    act(() => result.current.clearResult())
+    expect(result.current.planResult).toBeNull()
+  })
   beforeEach(() => {
     resetMocks()
     vi.useFakeTimers()

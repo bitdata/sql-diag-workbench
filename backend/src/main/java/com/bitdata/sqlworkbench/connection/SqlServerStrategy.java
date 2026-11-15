@@ -30,16 +30,14 @@ public class SqlServerStrategy implements DatabaseStrategy {
 
     @Override
     public String getExplainSql(String sql) {
-        // SET SHOWPLAN_TEXT must run as a stand-alone batch on SQL Server,
-        // which JDBC executeQuery cannot do. Return the SQL as-is; the
-        // plan-capture path is a separate concern (see: sp_executesql +
-        // sys.dm_exec_query_plan, future work).
+        // Never execute this through a generic EXPLAIN path. ExecutionEngine
+        // dispatches SQL Server to SqlServerPlanCollector's independent SET batches.
         return sql;
     }
 
     @Override
     public String getAnalyzeSql(String sql) {
-        // SQL Server plan capture is a separate concern (future work)
+        // Actual plans also use the dedicated collector, preserving the original SQL.
         return sql;
     }
 
@@ -62,7 +60,9 @@ public class SqlServerStrategy implements DatabaseStrategy {
     public DialectProfile getDialectProfile() {
         return new DialectProfile(
             "sqlserver",
-            MssqlSqlDialect.DEFAULT,
+            // Core exploration is certified only on the current major-17 test target.
+            // Parser support does not enable plan/trace/optimization capabilities.
+            new com.bitdata.sqlworkbench.sql.tsql.TsqlExecutableDialect(17),
             // T-SQL uses `[bracket]` identifiers (also supports "double-quoted"
             // for SQL-92 compat, but brackets are canonical). The previous
             // value '"' was wrong — it prevented `SELECT [id] FROM [t]` from
@@ -74,7 +74,7 @@ public class SqlServerStrategy implements DatabaseStrategy {
             // Calcite 1.37's nearest SqlServer conformance is SQL_SERVER_2008
             // (no SQL_SERVER_2005 in this version). Enables T-SQL extensions.
             SqlConformanceEnum.SQL_SERVER_2008,
-            SqlParserImpl.FACTORY  // default — explicit for readability (A2 narrow-surface: only PG gets babel)
+            com.bitdata.sqlworkbench.sql.tsql.TsqlParserSupport.FACTORY
         );
     }
 

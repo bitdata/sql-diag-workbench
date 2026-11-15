@@ -16,8 +16,15 @@ public class ClauseStrippingRule implements DecompositionRule {
     public String description() { return "Remove one clause while retaining other clauses in its scope"; }
     public DecompositionLevel level() { return DecompositionLevel.CLAUSE; }
     public List<DecomposedFragment> apply(SqlNode root, String dialect) {
+        RuleEvaluation result = evaluate(root, dialect);
+        if (!result.issues().isEmpty()) throw new IllegalStateException(result.issues().toString());
+        return result.fragments();
+    }
+    public RuleEvaluation evaluate(SqlNode root, String dialect) {
         DialectProfile p = resolver.getProfile(dialect);
-        return QueryScopeEdits.map(root, "query", scope -> {
+        List<Issue> issues = new ArrayList<>();
+        List<DecomposedFragment> fragments = new ArrayList<>();
+        var candidates = QueryScopeEdits.map(root, "query", scope -> {
             SqlNode n = scope.node(); String path = scope.path();
             List<QueryScopeEdits.Edit> edits = new ArrayList<>();
             if (n instanceof SqlOrderBy ob) {
@@ -38,8 +45,20 @@ public class ClauseStrippingRule implements DecompositionRule {
                     "Remove LIMIT/OFFSET", new Change("REMOVE","PAGINATION",path,NodeToSql.toSql(s,p),null)));
             }
             return edits;
-        }).stream().map(e -> new DecomposedFragment(FragmentType.STRIPPED,e.label(),NodeToSql.toSql(e.node(),p),name(),true,
-            "Other clauses retained; results belong to this experiment",List.of(),
-            new Effect(null,null,"PRESERVED",List.of(e.change()),List.of(),List.of()))).toList();
+        });
+        for (var candidate : candidates) {
+            String sql = NodeToSql.toSql(candidate.node(), p);
+            String reason = "sqlserver".equalsIgnoreCase(dialect)
+                ? com.bitdata.sqlworkbench.sql.tsql.TsqlQueryLegality.rejectionReason(candidate.node()) : null;
+            if (reason != null) {
+                issues.add(new Issue(reason, "Candidate ordering/pagination is not independently executable",
+                    name(), candidate.change().scopePath(), null, sql));
+                continue;
+            }
+            fragments.add(new DecomposedFragment(FragmentType.STRIPPED,candidate.label(),sql,name(),true,
+                "Other clauses retained; results belong to this experiment",List.of(),
+                new Effect(null,null,"PRESERVED",List.of(candidate.change()),List.of(),List.of())));
+        }
+        return new RuleEvaluation(fragments, issues);
     }
 }

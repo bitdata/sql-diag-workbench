@@ -3,6 +3,7 @@ import { useState } from 'react'
 import type { KeyValue, TraceStep, DiagnosticFinding, EliminationOutcome } from '../../types/diagnostics'
 import type { UseRowTraceReturn } from '../../hooks/useRowTrace'
 import './RowTracePanel.css'
+import DiagnosticCleanup from './DiagnosticCleanup'
 
 interface RowTracePanelProps {
   fragmentTreeJson: string
@@ -119,6 +120,7 @@ export default function RowTracePanel({ fragmentTreeJson, connectionId, rowTrace
         <div className="row-trace-instructions">
           <h4>{tr("Expected Row Trace")}</h4><p className="storage-description">{tr("Enter a key projected by the fragments, for example emp_no = 10001. Existence checks presence; Cardinality checks the number of matching rows.")}</p>
           <p>{tr("Choose explicit output keys to investigate existence or quantity in the submitted exploration graph. Both modes support up to 64 unique fragments and 512 node occurrences, including the root.")}</p>
+          {rowTrace.dialect === 'oracle' && <p>{tr('Oracle keys use exact output labels. Choose DECIMAL for NUMBER and preserve large numbers as text. Empty TEXT, fixed CHAR and unsupported types remain UNKNOWN.')}</p>}
         </div>
         <div className="row-trace-form">
           <label>{tr("Investigation")}{" "}<select aria-label={tr("Investigation mode")} value={mode} onChange={e => setMode(e.target.value as typeof mode)}>
@@ -144,7 +146,7 @@ export default function RowTracePanel({ fragmentTreeJson, connectionId, rowTrace
             const ids = new Set<string>(); const walk = (n: { id: string; children?: unknown[] }) => { ids.add(n.id); n.children?.forEach(c => walk(c as typeof n)) }
             walk(JSON.parse(fragmentTreeJson)); return ids.size
           } catch { return 'unknown' } })()}</span>
-          {inputError && <p role="alert">{inputError}</p>}
+          {(inputError || rowTrace.error) && <p role="alert">{inputError ?? rowTrace.error}</p>}
           <button onClick={handleTrace} disabled={keys.some(k => !k.column.trim()) || rowTrace.blocked}>
             {tr("Trace")}{" "}</button>
         </div>
@@ -180,6 +182,7 @@ export default function RowTracePanel({ fragmentTreeJson, connectionId, rowTrace
 
       <p className="trace-scope">{tr("Current submitted exploration graph only. Source data is unverified;")}{" "}{rowTrace.mode === 'CARDINALITY' ? tr("quantity is measured for the submitted output keys, without a shared snapshot guarantee.") : tr("existence does not validate duplicates or values, and separate observations have no guaranteed shared snapshot.")}</p>
       {rowTrace.traceId && <p>{tr("Trace")}{" "}{rowTrace.traceId}</p>}
+      <DiagnosticCleanup lifecycle={rowTrace.lifecycle} pending={rowTrace.cleanupPending} reason={rowTrace.errorReason} retry={rowTrace.retryStatus} />
       {rowTrace.snapshot && rowTrace.snapshot.fragmentTreeJson !== fragmentTreeJson && <p>{tr("Submitted snapshot only; newly expanded fragments are not included.")}</p>}
       {rowTrace.cancelSignal && <p data-error-reason={rowTrace.cancelSignal.errorReason ?? undefined}>{tr("Database cancellation signal:")}{" "}{rowTrace.cancelSignal.state}{tr(". This does not prove server execution stopped.")}</p>}
       {rowTrace.mode === 'CARDINALITY' && <div className="trace-quantity" aria-label={tr("Quantity evidence")}>

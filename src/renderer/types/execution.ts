@@ -81,7 +81,11 @@ export interface ResultCompleteness {
   errorReason: string | null
 }
 
+export interface ExecutionLifecycle {
+  version: 1; revision: number; settled: boolean; cancelSignal: string; cleanup: string; errorReason?: string | null
+}
 export interface ExecutionResult {
+  lifecycle?: ExecutionLifecycle
   observationReceipt?: { status: 'SAVED' | 'FAILED' | 'NOT_APPLICABLE'; receiptId: string | null; errorReason: string | null } | null
   planCapture?: PlanCapture | null
   resultCompleteness?: ResultCompleteness | null
@@ -127,12 +131,13 @@ export interface PlanCapture {
   version: 1; requestedMode: Mode; attemptedMode: Mode | null
   submittedSql: string; explainSql: string | null; connectionId: string; sessionId: string | null; dialect: string
   serverProduct: string | null; serverVersion: string | null; capturedAt: string | null
-  capabilities: PlanCapabilities | null; parseStatus: 'NOT_STARTED' | 'COMPLETE' | 'PARTIAL' | 'FAILED'
+  capabilities: PlanCapabilities | null; parseStatus: 'NOT_STARTED' | 'COMPLETE' | 'PARTIAL' | 'FAILED' | 'UNKNOWN' | 'NOT_PROVIDED'
   issues: CaptureIssue[]
 }
 export interface PlanDetails {
   version: 1
-  channel: 'POSTGRESQL_JSON' | 'MYSQL_JSON' | 'MYSQL_TREE'
+  channel: 'POSTGRESQL_JSON' | 'MYSQL_JSON' | 'MYSQL_TREE' | 'SQLSERVER_XML' | 'ORACLE_PLAN_ROWS'
+  nativeEvidence?: NativeEvidence | null
   rawPlan: string | null
   database: string | null
   databaseUser: string | null
@@ -141,6 +146,15 @@ export interface PlanDetails {
   executionTimeMs: Metric
   nodes: { sourcePath: string; raw: string | null; firstRowMs: Metric }[]
   errorReason: string | null
+}
+export type NativeMetric = Omit<Metric, 'unit' | 'basis'> & {
+  unit: Metric['unit'] | 'READS' | 'EXECUTIONS' | 'OPTIMIZER_COST' | 'MICROSECONDS'
+  basis: Metric['basis'] | 'REPORTED_THREAD_TOTAL' | 'REPORTED_QUERY_TOTAL' | 'NATIVE_SUBTREE' | 'REPORTED_LAST_EXECUTION' | 'REPORTED_LAST_EXECUTION_INCLUSIVE'
+}
+export interface NativeEvidence {
+  version: 1
+  nodes: { sourcePath: string; physicalOp: string; logicalOp?: string | null; attributes: Record<string,string>; metrics: Record<string,NativeMetric>; threads: { sourcePath: string; threadId: string; metrics: Record<string,NativeMetric> }[] }[]
+  queryStats: { sourcePath: string; metrics: Record<string,NativeMetric> }[]
 }
 export interface NodeMetrics {
   version: 1; origin: 'DATABASE_NODE' | 'APPLICATION_SYNTHETIC' | 'LEGACY_UNKNOWN'; sourcePath: string | null

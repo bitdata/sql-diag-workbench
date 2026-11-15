@@ -65,7 +65,7 @@ public class OracleStrategy implements DatabaseStrategy {
             SqlKeywords.forDialect("oracle"),
             true,
             SqlConformanceEnum.ORACLE_10,
-            SqlParserImpl.FACTORY  // default — explicit for readability (A2 narrow-surface: only PG gets babel)
+            com.bitdata.sqlworkbench.sql.oracle.OracleParserAdapter.FACTORY  // default — explicit for readability (A2 narrow-surface: only PG gets babel)
         );
     }
 

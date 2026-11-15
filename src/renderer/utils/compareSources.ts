@@ -1,4 +1,5 @@
 import { tr } from '../i18n'
+import { LEGACY_READ_ONLY } from './workspaceIdentity'
 import type { Tab } from '../types/tab'
 import type { FragmentNode } from '../types/fragment'
 import type { DAGState } from '../hooks/dagState'
@@ -23,6 +24,7 @@ export function createCompareSourceReader() {
       const ws = tab.workspace
       const base: CompareSource = { sessionId: tab.sessionId, tabName: tab.name, dialect: ws.dialect,
         version: '', nodes: [], errorReason: null, degraded: false }
+      if (ws.readOnly) return { ...base, degraded: true, errorReason: LEGACY_READ_ONLY }
       if (ws.hydration !== 'ready' || ws.recoveryBlocked) return { ...base,
         errorReason: ws.hydration === 'loading' ? 'Workspace is loading' : ws.recoveryError ?? 'Workspace is unavailable' }
       if (tab.sessionId === active.sessionId) return { ...base, dialect: active.dialect,

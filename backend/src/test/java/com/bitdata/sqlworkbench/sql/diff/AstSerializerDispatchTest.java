@@ -50,10 +50,10 @@ class AstSerializerDispatchTest {
         List<NodeToken> toks = tokens("SELECT a FROM t ORDER BY a");
         // recon: 旧实现 tokens=1（UNKNOWN@root:SqlOrderBy），整条查询坍缩。
         assertEquals("", unknowns(toks), "ORDER BY 查询不得再落兜底");
-        assertTrue(toks.stream().anyMatch(t -> "ORDER_BY".equals(t.nodeType())));
-        assertTrue(toks.stream().anyMatch(t -> "SELECT".equals(t.nodeType())),
+        assertTrue(toks.stream().anyMatch(t -> "OPEN_LIST".equals(t.nodeType()) && "root/1/open".equals(t.path())));
+        assertTrue(toks.stream().anyMatch(t -> "OPEN_SELECT".equals(t.nodeType())),
             "wrapper 里的 SELECT 必须被递归出来，否则内层结构全丢");
-        assertTrue(toks.stream().anyMatch(t -> "TABLE".equals(t.nodeType())));
+        assertTrue(toks.stream().anyMatch(t -> "VALUE_IDENT_COMPONENTS".equals(t.nodeType()) && "root/0/2".equals(t.path())));
     }
 
     @Test
@@ -80,8 +80,8 @@ class AstSerializerDispatchTest {
         List<NodeToken> toks = tokens("SELECT a FROM t GROUP BY a HAVING COUNT(*) > 1");
         // recon: 旧实现四条 token，与 `SELECT a FROM t` 完全相同 ⇒ 静默碰撞，
         // 且因为不产生 UNKNOWN，零-UNKNOWN 闸门查不出来。
-        assertTrue(toks.stream().anyMatch(t -> "GROUP_BY".equals(t.nodeType())));
-        assertTrue(toks.stream().anyMatch(t -> "HAVING".equals(t.nodeType())));
+        assertTrue(toks.stream().anyMatch(t -> "OPEN_LIST".equals(t.nodeType()) && "root/0/4/open".equals(t.path())));
+        assertTrue(toks.stream().anyMatch(t -> "EXPRESSION".equals(t.nodeType()) && "root/0/5".equals(t.path())));
         assertNotEquals(id("SELECT a FROM t"), id("SELECT a FROM t GROUP BY a HAVING COUNT(*) > 1"));
         assertNotEquals(id("SELECT a FROM t GROUP BY a"), id("SELECT a FROM t GROUP BY b"));
     }
@@ -90,7 +90,7 @@ class AstSerializerDispatchTest {
     void distinctModifierReachesTheTokenStream() throws Exception {
         // recon: `SELECT DISTINCT a FROM t` 与 `SELECT a FROM t` 旧实现同串同 id。
         assertTrue(tokens("SELECT DISTINCT a FROM t").stream()
-            .anyMatch(t -> "SELECT_MODIFIER".equals(t.nodeType())));
+            .anyMatch(t -> "VALUE_LITERAL".equals(t.nodeType()) && t.canonicalText().contains("DISTINCT")));
         assertNotEquals(id("SELECT a FROM t"), id("SELECT DISTINCT a FROM t"));
     }
 
@@ -110,8 +110,10 @@ class AstSerializerDispatchTest {
             "兜底 token 必须带类名 + 内容摘要，实际=" + a.get(0).canonicalText());
         assertNotEquals(a.get(0).canonicalText(), b.get(0).canonicalText(),
             "recon: 旧实现两条都发 UNKNOWN@root:SqlUpdate ⇒ 同 id");
-        assertNotEquals(id("UPDATE t SET a = 1"), id("UPDATE u SET b = 2"));
-        assertNotEquals(id("SET search_path TO public"), id("SET search_path TO other"));
+        for (String sql : List.of("UPDATE t SET a = 1","UPDATE u SET b = 2","SET search_path TO public","SET search_path TO other")) {
+            assertTrue(SqlCanonicalizer.canonicalizeSqlWithStatus(sql,"postgresql").degraded());
+            assertThrows(IllegalArgumentException.class, () -> id(sql));
+        }
     }
 
     @Test
@@ -122,9 +124,9 @@ class AstSerializerDispatchTest {
         // 故守卫必须是 size()>0，否则每个 SELECT 都会多出一个 WINDOW token。
         List<NodeToken> toks = tokens("SELECT sum(a) OVER w FROM t WINDOW w AS (ORDER BY a)");
         assertEquals("", unknowns(toks), "WINDOW 定义体不得落兜底（walk 必须完整）");
-        assertTrue(toks.stream().anyMatch(t -> "WINDOW".equals(t.nodeType())),
+        assertTrue(toks.stream().anyMatch(t -> "OPEN_LIST".equals(t.nodeType()) && "root/0/6/open".equals(t.path())),
             "WINDOW 子句标记 token 缺失，实际=" + tk(toks));
-        assertTrue(toks.stream().anyMatch(t -> "WINDOW_DEF".equals(t.nodeType())),
+        assertTrue(toks.stream().anyMatch(t -> "EXPRESSION".equals(t.nodeType()) && t.canonicalText().contains("CALL_WINDOW")),
             "窗口定义体 token 缺失，实际=" + tk(toks));
         assertNotEquals(id("SELECT sum(a) OVER w FROM t WINDOW w AS (ORDER BY a)"),
                         id("SELECT sum(a) OVER w FROM t WINDOW w AS (ORDER BY b)"),
@@ -150,7 +152,7 @@ class AstSerializerDispatchTest {
         // （1c607e78a4c96977），两个不同的 QUALIFY 谓词之间也互相碰撞。
         List<NodeToken> toks = tokens("SELECT a FROM t QUALIFY row_number() OVER (ORDER BY a) = 1");
         assertEquals("", unknowns(toks), "QUALIFY 谓词不得落兜底（walk 必须完整）");
-        assertTrue(toks.stream().anyMatch(t -> "QUALIFY".equals(t.nodeType())),
+        assertTrue(toks.stream().anyMatch(t -> "EXPRESSION".equals(t.nodeType()) && "root/0/7".equals(t.path())),
             "QUALIFY token 缺失，实际=" + tk(toks));
         assertNotEquals(id("SELECT a FROM t QUALIFY row_number() OVER (ORDER BY a) = 1"),
                         id("SELECT a FROM t QUALIFY row_number() OVER (ORDER BY b) = 1"),
@@ -167,7 +169,7 @@ class AstSerializerDispatchTest {
         // （DISTINCT 在 SELECT_MODIFIER 分支，ALL 是默认值、必须与省略等价）。
         List<NodeToken> toks = tokens("SELECT STREAM a FROM t");
         assertTrue(toks.stream().anyMatch(
-                t -> "SELECT_MODIFIER".equals(t.nodeType()) && "STREAM".equals(t.canonicalText())),
+                t -> "VALUE_LITERAL".equals(t.nodeType()) && "[\"SYMBOL\",\"STREAM\"]".equals(t.canonicalText())),
             "STREAM 修饰 token 缺失，实际=" + tk(toks));
         assertNotEquals(id("SELECT a FROM t"), id("SELECT STREAM a FROM t"),
             "带 STREAM 与不带 STREAM 的查询必须不同 id");

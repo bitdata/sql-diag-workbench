@@ -30,19 +30,14 @@ class SqlCanonicalizerOrderByTest {
 
     @Test
     void orderByItemsKeepDocumentOrderAndTheirOwnPathNamespace() throws Exception {
-        String c = canon("SELECT a FROM t ORDER BY a, b");
-        assertFalse(c.contains("@.OR."),
-            "ORDER BY 项不得被重编号进 OR 命名空间，实际=" + c);
-        assertTrue(c.contains("ORDER_LIST"), "ORDER BY 项应保留自己的路径段，实际=" + c);
-        // 必须定位到 ORDER BY 项本身：全串里第一个 ":A" 是 SELECT_LIST 项，
-        // 用它比较会在**旧实现**上也成立（旧串 …SELECT_LIST:A … IDENT@.OR.0:A IDENT@.OR.1:B）。
-        String ab = canon("SELECT a FROM t ORDER BY a, b");
-        assertTrue(ab.indexOf("ORDER_LIST:A") < ab.indexOf("ORDER_LIST:B"),
-            "键序必须保持文档序（定位 ORDER BY 项，非首个 :A），实际=" + ab);
-
-        String ba = canon("SELECT a FROM t ORDER BY b, a");
-        assertTrue(ba.indexOf("ORDER_LIST:B") < ba.indexOf("ORDER_LIST:A"),
-            "反序同样必须保持文档序，实际=" + ba);
+        var json = new com.fasterxml.jackson.databind.ObjectMapper();
+        var ab = json.readTree(canon("SELECT a FROM t ORDER BY a, b")).get(2).get(1).get(2);
+        var ba = json.readTree(canon("SELECT a FROM t ORDER BY b, a")).get(2).get(1).get(2);
+        assertEquals(2, ab.size());
+        assertEquals("[\"A\"]", ab.get(0).get(1).asText());
+        assertEquals("[\"B\"]", ab.get(1).get(1).asText());
+        assertEquals(ab.get(0), ba.get(1));
+        assertEquals(ab.get(1), ba.get(0));
     }
 
     @Test
@@ -51,7 +46,7 @@ class SqlCanonicalizerOrderByTest {
         assertEquals(canon("SELECT a FROM t WHERE a > 0 OR b < 1"),
             canon("SELECT a FROM t WHERE b < 1 OR a > 0"),
             "OR 操作数可交换（ADR-0001/P1）");
-        assertTrue(canon("SELECT a FROM t WHERE a > 0 OR b < 1").contains(".OR."),
+        assertTrue(canon("SELECT a FROM t WHERE a > 0 OR b < 1").contains("CALL_OR"),
             "真实 OR 块仍应被重编号为 .OR.n");
     }
 
@@ -60,6 +55,6 @@ class SqlCanonicalizerOrderByTest {
         // 反向约束：.AND 标记无误判站点，行为必须与修前一致。
         assertEquals(canon("SELECT a FROM t WHERE a > 0 AND b < 1"),
             canon("SELECT a FROM t WHERE b < 1 AND a > 0"));
-        assertTrue(canon("SELECT a FROM t WHERE a > 0 AND b < 1").contains(".AND."));
+        assertTrue(canon("SELECT a FROM t WHERE a > 0 AND b < 1").contains("CALL_AND"));
     }
 }

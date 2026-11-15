@@ -4,8 +4,9 @@ import ComplexSourcePanel from '../ComplexSourcePanel'
 const mocks = vi.hoisted(() => ({ api: vi.fn(), trace: vi.fn(), cancel: vi.fn(), clear: vi.fn(), state: {} as Record<string, unknown> }))
 vi.mock('../../../utils/api', () => ({ apiFetch: mocks.api }))
 vi.mock('../../../hooks/useRowTrace', () => ({ useRowTrace: () => ({ status: 'idle', steps: [], trace: mocks.trace, cancel: mocks.cancel, clear: mocks.clear, ...mocks.state }) }))
-const props = { backendUrl: 'http://backend', connectionId: 'c1', fragmentTreeJson: JSON.stringify({ sqlFragment: 'SELECT invoice FROM invoices' }), keys: [{ column: 'invoice', type: 'TEXT' as const, value: 'INV-3' }] }
-const source = (id: string) => ({ occurrence: id, schema: 'public', relation: 'items', path: ['query', 'cte:invoices'], sourceSql: 'SELECT parent AS source_key_0 FROM public.items',
+const context = { sessionId: 's', identityPolicy: 'structural-p0p1-v2', workspaceRevision: 1, workspaceInstanceId: 'a'.repeat(32) }
+const props = { prepareDiagnostic: async () => context, backendUrl: 'http://backend', connectionId: 'c1', fragmentTreeJson: JSON.stringify({ sqlFragment: 'SELECT invoice FROM invoices' }), keys: [{ column: 'invoice', type: 'TEXT' as const, value: 'INV-3' }] }
+const source = (id: string) => ({ sourceReceiptId: 'receipt-' + id, occurrence: id, schema: 'public', relation: 'items', path: ['query', 'cte:invoices'], sourceSql: 'SELECT parent AS source_key_0 FROM public.items',
   keys: [{ column: 'source_key_0', type: 'TEXT', value: 'INV-3' }], mappings: [{ keyIndex: 0, outputColumn: 'invoice', sourceExpression: 'parent' }] })
 const plan = () => ({ status: 'COMPLETED', verified: true, connectionId: 'c1', originalSql: 'SELECT invoice FROM invoices', metadataSql: 'SELECT invoice FROM invoices LIMIT 0', sources: [source('source-1'), source('source-2')], issues: [] as Record<string, unknown>[], observedAt: '2026-10-16T00:00:00Z', errorReason: undefined as string | undefined })
 beforeEach(() => { vi.clearAllMocks(); mocks.state = {}; mocks.api.mockResolvedValue({ ok: true, json: async () => plan() }) })
@@ -13,7 +14,8 @@ it('observes a chosen occurrence independently without executing all source quer
   render(<ComplexSourcePanel {...props} />); fireEvent.click(screen.getByText('Resolve query sources'))
   await screen.findByText('Observe source-2'); expect(mocks.trace).not.toHaveBeenCalled()
   fireEvent.click(screen.getByText('Observe source-2')); expect(mocks.trace).toHaveBeenCalledTimes(1)
-  expect(JSON.parse(mocks.trace.mock.calls[0][1]).sqlFragment).toBe(source('source-2').sourceSql)
+  expect(mocks.trace.mock.calls[0][1]).toBe('')
+  expect(mocks.trace.mock.calls[0][3]).toEqual({ mode: 'CARDINALITY', queryTimeoutSeconds: 30, diagnosticContext: context, sourceReceiptId: 'receipt-source-2' })
   expect(mocks.trace.mock.calls[0][2]).toEqual(source('source-2').keys)
 })
 it('retains explicit incomplete coverage alongside a valid source observation', async () => {
@@ -39,7 +41,7 @@ it.each(['value', 'index', 'identity', 'occurrence'])('rejects invalid %s before
 })
 it('ignores a cancelled late resolution without accepting source counts', async () => {
   let resolve!: (value: unknown) => void; mocks.api.mockImplementation(() => new Promise(r => { resolve = r }))
-  render(<ComplexSourcePanel {...props} />); fireEvent.click(screen.getByText('Resolve query sources')); fireEvent.click(screen.getByText('Cancel source resolution'))
+  render(<ComplexSourcePanel {...props} />); fireEvent.click(screen.getByText('Resolve query sources')); await waitFor(() => expect(mocks.api).toHaveBeenCalled()); fireEvent.click(screen.getByText('Cancel source resolution'))
   await act(async () => resolve({ ok: true, json: async () => plan() }))
   expect(screen.queryByText('Observe source-1')).toBeNull(); expect(screen.getByText(/server request may still/)).toBeInTheDocument()
 })

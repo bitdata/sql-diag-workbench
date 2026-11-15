@@ -5,6 +5,8 @@ import { useSessionLifecycle } from '../useSessionLifecycle'
 import type { ParseResult, FragmentNode } from '../../types/fragment'
 import type { UseTabsApi } from '../useTabs'
 import { resetMocks } from '../../test/testUtils'
+import { createDAGState } from '../dagState'
+import type { SessionWorkspaceState } from '../../types/session'
 
 function makeNode(id: string): FragmentNode {
   return {
@@ -76,6 +78,18 @@ function setup(overrides: Record<string, unknown> = {}) {
 }
 
 describe('useSessionLifecycle', () => {
+  it('projects a new text-only snapshot when the connection changes dialect', () => {
+    const workspace: SessionWorkspaceState = { sessionId: 'draft', tabName: 'Draft', sql: '', isDirty: false,
+      lastSavedAt: null, connectionId: null, dialect: 'postgresql', fragmentTreeJson: null,
+      selectedNodeId: null, workspaceMode: 'performance', viewerMode: 'input', hydration: 'ready' }
+    const tabsApi = makeTabsApi({ activeWorkspace: workspace, activeSessionId: 'draft' })
+    const { rerender } = setup({ tabsApi, dag: createDAGState(), parsedDialect: 'postgresql' })
+    tabsApi.activeWorkspace = { ...workspace, dialect: 'sqlserver' }
+    rerender()
+    expect(tabsApi.updateWorkspace).toHaveBeenCalledWith('draft', expect.objectContaining({
+      workspaceSnapshotJson: expect.stringContaining('"dialect":"sqlserver"'),
+    }), true)
+  })
   beforeEach(() => {
     vi.useFakeTimers()
     resetMocks()

@@ -71,7 +71,7 @@ class SqlServerStrategyTest {
     void getDialectProfile_returnsSqlServerProfile() {
         DialectProfile profile = strategy.getDialectProfile();
         assertEquals("sqlserver", profile.name());
-        assertEquals(MssqlSqlDialect.DEFAULT, profile.calciteDialect());
+        assertTrue(profile.calciteDialect() instanceof com.bitdata.sqlworkbench.sql.tsql.TsqlExecutableDialect);
         // T-SQL canonical quoting is `[bracket]` (was wrongly '"' before
         // PR-2 of live-channel-assumption-sweep 2026-09-09).
         assertEquals('[', profile.quoteChar());

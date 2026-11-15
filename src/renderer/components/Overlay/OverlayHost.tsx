@@ -2,6 +2,7 @@ import { tr, useLocale } from '../../i18n'
 import { useState, useCallback, useImperativeHandle, forwardRef } from 'react'
 import ConnectionDialog from '../Connection/ConnectionDialog'
 import SettingsPanel from '../Settings/SettingsPanel'
+import AboutDialog from '../Settings/AboutDialog'
 import FragmentEditor from '../Editor/FragmentEditor'
 import LineagePanel from '../Lineage/LineagePanel'
 import TabRenameDialog from '../Tabs/TabRenameDialog'
@@ -25,6 +26,7 @@ export interface OverlayHandle {
   getExitBlockers?: () => string[]
   openConnectionDialog: (editingId?: string) => void
   openSettings: () => void
+  openAbout: () => void
   openFragmentEditor: (node: FragmentNode) => void
   openLineage: () => void
   openTabRename: (tab: Tab) => void
@@ -33,6 +35,7 @@ export interface OverlayHandle {
 }
 
 interface OverlayHostProps {
+  workspace?: import('../../types/session').SessionWorkspaceState | null
   storage?: StorageHook
   // Connection
   connections: ConnectionConfig[]
@@ -82,6 +85,7 @@ const OverlayHost = forwardRef<OverlayHandle, OverlayHostProps>(function Overlay
   const [showConnectionDialog, setShowConnectionDialog] = useState(false)
   const [editingConnection, setEditingConnection] = useState<string | null>(null)
   const [showSettings, setShowSettings] = useState(false)
+  const [showAbout, setShowAbout] = useState(false)
   const [showFragmentEditor, setShowFragmentEditor] = useState(false)
   const [editingFragmentId, setEditingFragmentId] = useState<string | null>(null)
   const [editingFragmentSql, setEditingFragmentSql] = useState('')
@@ -104,7 +108,9 @@ const OverlayHost = forwardRef<OverlayHandle, OverlayHostProps>(function Overlay
       setShowConnectionDialog(true)
     },
     openSettings: () => setShowSettings(true),
+    openAbout: () => setShowAbout(true),
     openFragmentEditor: (node: FragmentNode) => {
+      if (props.workspace?.readOnly) return
       setEditingFragmentId(node.id)
       setEditingFragmentSql(node.sqlFragment)
       setEditingFragmentLabel(node.label)
@@ -114,7 +120,7 @@ const OverlayHost = forwardRef<OverlayHandle, OverlayHostProps>(function Overlay
     openTabRename: (tab: Tab) => setRenameDialogTab(tab),
     openTabContextMenu: (tab: Tab, x: number, y: number) => setTabContextMenu({ tab, x, y }),
     openCloseConfirm: (tab: Tab) => setCloseConfirmTab(tab),
-  }), [showFragmentEditor, showConnectionDialog, renameDialogTab, closeConfirmTab])
+  }), [showFragmentEditor, showConnectionDialog, renameDialogTab, closeConfirmTab, props.workspace?.readOnly])
 
   // ── Helper: close fragment editor and reset all internal state ──
   const closeFragmentEditor = useCallback(() => {
@@ -222,6 +228,7 @@ const OverlayHost = forwardRef<OverlayHandle, OverlayHostProps>(function Overlay
           onClose={() => setShowSettings(false)}
         />
       )}
+      {showAbout && <AboutDialog onClose={() => setShowAbout(false)} />}
 
       {/* Fragment editor */}
       {showFragmentEditor && (
@@ -239,7 +246,7 @@ const OverlayHost = forwardRef<OverlayHandle, OverlayHostProps>(function Overlay
 
       {/* Lineage panel */}
       {showLineagePanel && result?.tree && (
-        <LineagePanel
+        <LineagePanel workspace={props.workspace}
           chain={lineageChain}
           allNodes={allLineageNodes}
           pathNotice={props.lineagePathNotice}

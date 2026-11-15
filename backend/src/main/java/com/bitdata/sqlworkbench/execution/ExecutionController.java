@@ -43,6 +43,10 @@ public class ExecutionController {
             return ResponseEntity.ok(Map.of("executionId", executionId));
         } catch (ExecutionCapacityException e) {
             return ResponseEntity.status(429).body(Map.of("code", "EXECUTION_CAPACITY_EXHAUSTED", "message", e.getMessage()));
+        } catch (IllegalStateException e) {
+            if("APPLICATION_SHUTDOWN".equals(e.getMessage()))return ResponseEntity.status(503).body(Map.of("code","EXECUTION_SHUTTING_DOWN",
+                "degraded",true,"errorReason","APPLICATION_SHUTDOWN","message","Execution service is stopping; no task was admitted."));
+            return ResponseEntity.internalServerError().body(Map.of("code","EXECUTION_ERROR","degraded",true,"errorReason","EXECUTION_SUBMISSION_FAILED","message","Execution submission failed"));
         } catch (Exception e) {
             log.error("Failed to submit execution", e);
             return ResponseEntity.internalServerError().body(Map.of(
@@ -83,6 +87,10 @@ public class ExecutionController {
             return ResponseEntity.ok(Map.of("executionId", executionId));
         } catch (ExecutionCapacityException e) {
             return ResponseEntity.status(429).body(Map.of("code", "EXECUTION_CAPACITY_EXHAUSTED", "message", e.getMessage()));
+        } catch (IllegalStateException e) {
+            if("APPLICATION_SHUTDOWN".equals(e.getMessage()))return ResponseEntity.status(503).body(Map.of("code","EXECUTION_SHUTTING_DOWN",
+                "degraded",true,"errorReason","APPLICATION_SHUTDOWN","message","Execution service is stopping; no task was admitted."));
+            return ResponseEntity.internalServerError().body(Map.of("code","EXECUTION_ERROR","degraded",true,"errorReason","EXECUTION_SUBMISSION_FAILED","message","Execution submission failed"));
         } catch (Exception e) {
             log.error("Failed to submit analyze", e);
             return ResponseEntity.internalServerError().body(Map.of(
@@ -109,8 +117,15 @@ public class ExecutionController {
         if (result == null) {
             return ResponseEntity.notFound().build();
         }
-        return ResponseEntity.ok(result);
+        return ResponseEntity.ok(engine.ordinaryResponse(executionId));
     }
+
+    @PostMapping("/drain")
+    public ResponseEntity<?> beginDrain() {
+        engine.beginShutdown();return ResponseEntity.accepted().body(engine.shutdownSnapshot());
+    }
+    @GetMapping("/drain")
+    public ResponseEntity<?> drainStatus() {return ResponseEntity.ok(engine.shutdownSnapshot());}
 
     @DeleteMapping("/execute/{executionId}")
     public ResponseEntity<?> cancel(@PathVariable String executionId) {

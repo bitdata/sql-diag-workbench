@@ -16,7 +16,9 @@ import java.util.concurrent.ForkJoinPool;
 public class ComplexSourcePlanService {
     public record Mapping(int keyIndex,String outputColumn,String sourceExpression) {}
     public record Source(String occurrence,String schema,String relation,List<String> path,String sourceSql,
-                         List<PhysicalSourcePlanService.BoundKey> keys,List<Mapping> mappings) {}
+                         List<PhysicalSourcePlanService.BoundKey> keys,List<Mapping> mappings,String sourceReceiptId) {
+        public Source(String occurrence,String schema,String relation,List<String> path,String sql,List<PhysicalSourcePlanService.BoundKey> keys,List<Mapping> mappings){this(occurrence,schema,relation,path,sql,keys,mappings,null);}
+    }
     public record Issue(String occurrence,Integer keyIndex,String errorReason,String schema,String relation,List<String> path) {
         Issue(String occurrence,Integer keyIndex,String errorReason) {this(occurrence,keyIndex,errorReason,null,null,List.of());}
     }
@@ -80,6 +82,7 @@ public class ComplexSourcePlanService {
                 }
                 List<Source> sources=new ArrayList<>();char quote=strategy.getDialectProfile().quoteChar();
                 for(var leaf:lineage.leaves()) {
+                    if(leaf.relation().errorReason()!=null){issues.add(new Issue(leaf.occurrence(),null,leaf.relation().errorReason(),leaf.relation().schema(),leaf.relation().name(),leaf.path()));continue;}
                     var map=mappings.get(leaf.occurrence());
                     if(map==null) {issues.add(new Issue(leaf.occurrence(),null,"SOURCE_RELATION_WITHOUT_KEY",leaf.relation().schema(),leaf.relation().name(),leaf.path()));continue;}
                     var relation=leaf.relation();List<String> select=new ArrayList<>();

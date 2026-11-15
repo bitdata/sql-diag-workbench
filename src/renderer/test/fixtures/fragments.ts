@@ -11,6 +11,7 @@ const mockJoinChild: FragmentNode = {
   type: 'JOIN_SPLIT',
   label: 'orders',
   sqlFragment: 'SELECT * FROM orders',
+  canonicalSql: 'unit-test-opaque-canonical',
   executable: true,
   executionHint: null,
   nodeCount: 0,
@@ -24,6 +25,7 @@ const mockWhereChild: FragmentNode = {
   type: 'STRIPPED',
   label: 'WHERE clause',
   sqlFragment: "WHERE orders.status = 'active'",
+  canonicalSql: 'unit-test-opaque-canonical',
   executable: false,
   executionHint: null,
   nodeCount: 0,
@@ -38,6 +40,7 @@ export const mockRootNode: FragmentNode = {
   label: 'Full Query',
   sqlFragment:
     'SELECT * FROM orders JOIN customers ON orders.customer_id = customers.id',
+  canonicalSql: 'unit-test-opaque-canonical',
   executable: true,
   executionHint: null,
   nodeCount: 3,

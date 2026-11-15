@@ -24,8 +24,18 @@ public record TraceProgress(
     TraceEvidence evidence,
     TraceMode mode,
     QuantityEvidence quantity,
-    CancelSignal cancelSignal
+    CancelSignal cancelSignal,
+    String observationKind,
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL) TraceLifecycle lifecycle
 ) {
+    public TraceProgress(String id,TraceStatus status,List<TraceStep> steps,TraceStep elimination,List<DiagnosticFinding> findings,
+        long elapsed,String error,EliminationOutcome outcome,String reason,TraceEvidence evidence,TraceMode mode,QuantityEvidence quantity,CancelSignal signal,String observationKind) {
+        this(id,status,steps,elimination,findings,elapsed,error,outcome,reason,evidence,mode,quantity,signal,observationKind,null);
+    }
+    public TraceProgress(String id,TraceStatus status,List<TraceStep> steps,TraceStep elimination,List<DiagnosticFinding> findings,
+        long elapsed,String error,EliminationOutcome outcome,String reason,TraceEvidence evidence,TraceMode mode,QuantityEvidence quantity,CancelSignal signal) {
+        this(id,status,steps,elimination,findings,elapsed,error,outcome,reason,evidence,mode,quantity,signal,"GRAPH");
+    }
     public TraceProgress(String id, TraceStatus status, List<TraceStep> steps, TraceStep elimination,
                          List<DiagnosticFinding> findings, long elapsed, String error, EliminationOutcome outcome, String reason, TraceEvidence evidence) {
         this(id,status,steps,elimination,findings,elapsed,error,outcome,reason,evidence,TraceMode.EXISTENCE,null,null);

@@ -33,7 +33,7 @@ export function useSessionLifecycle({ backendUrl, tabsApi, activeSessionLoading,
   checkpointState.current = { ws, dag, result, selectedNodeId, parsedSql, parsedDialect, tabsApi }
   const checkpoint = useCallback(() => {
     const now = checkpointState.current
-    if (!now.ws || !now.dag || now.ws.hydration !== 'ready' || now.ws.recoveryBlocked) return
+    if (!now.ws || !now.dag || now.ws.hydration !== 'ready' || now.ws.recoveryBlocked || now.ws.readOnly) return
     now.tabsApi.updateWorkspace(now.ws.sessionId, {
       workspaceSnapshotJson: snapshotWorkspace(now.ws, now.result?.tree ?? null, now.dag,
         now.selectedNodeId, now.parsedSql, now.parsedDialect as typeof now.ws.dialect),
@@ -51,12 +51,12 @@ export function useSessionLifecycle({ backendUrl, tabsApi, activeSessionLoading,
 
   useEffect(() => {
     if (ws?.sql.trim() && !ws.fragmentTreeJson && !ws.workspaceSnapshotJson && !result?.tree
-        && ws.hydration !== 'failed' && !ws.recoveryBlocked)
+        && ws.hydration !== 'failed' && !ws.recoveryBlocked && !ws.readOnly)
       void parseRef.current(ws.sql, dialect, true)
   }, [ws?.sessionId, ws?.loadEpoch, backendUrl, dialect])
 
   useEffect(() => {
-    if (!ws || !dag || ws.hydration === 'failed' || ws.hydration === 'loading') return
+    if (!ws || !dag || ws.hydration === 'failed' || ws.hydration === 'loading' || ws.readOnly) return
     const json = snapshotWorkspace(ws, result?.tree ?? null, dag, selectedNodeId, parsedSql, parsedDialect as typeof ws.dialect)
     const previous = fingerprints.current.get(ws.sessionId)
     const first = activeOwner.current !== ws.sessionId || !previous || previous.loadEpoch !== (ws.loadEpoch ?? 0)
@@ -74,7 +74,7 @@ export function useSessionLifecycle({ backendUrl, tabsApi, activeSessionLoading,
       isDirty: true,
       ...(newTree ? { recoveryBlocked: false, recoveryError: null } : {}),
     }, true)
-  }, [ws?.sessionId, ws?.loadEpoch, ws?.viewerMode, ws?.workspaceMode, result?.tree, dag, selectedNodeId, parsedSql, parsedDialect, treeEpoch])
+  }, [ws?.sessionId, ws?.loadEpoch, ws?.dialect, ws?.viewerMode, ws?.workspaceMode, result?.tree, dag, selectedNodeId, parsedSql, parsedDialect, treeEpoch])
 
   return {
     checkpoint,

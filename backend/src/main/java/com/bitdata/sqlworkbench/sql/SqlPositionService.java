@@ -39,7 +39,9 @@ public class SqlPositionService {
             return collector.getPositions();
         } catch (Exception e) {
             log.warn("Failed to extract positions: {}", e.getMessage());
-            return List.of();
+            var typed=SqlSerializationException.find(e);
+            if(typed!=null)throw typed;
+            throw new SqlSerializationException("SQL_POSITION_PARSE_UNSUPPORTED");
         }
     }
 

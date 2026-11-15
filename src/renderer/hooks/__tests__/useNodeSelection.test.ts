@@ -1,7 +1,9 @@
+import { graphRequest } from '../../utils/workspaceIdentity'
+import { currentWorkspace } from '../../test/currentWorkspace'
 // src/renderer/hooks/__tests__/useNodeSelection.test.ts
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
-import { useNodeSelection } from '../useNodeSelection'
+import { useNodeSelection as actualUseNodeSelection } from '../useNodeSelection'
 import type { SqlNodePosition } from '../../types/fragment'
 
 const BACKEND = 'http://localhost:8080'
@@ -70,6 +72,7 @@ describe('useNodeSelection', () => {
     expect(init.method).toBe('POST')
     expect(init.headers).toMatchObject({ 'Content-Type': 'application/json' })
     expect(JSON.parse(init.body)).toEqual({
+      ...graphRequest(currentWorkspace),
       sql: 'SELECT * FROM users',
       dialect: 'postgresql',
     })
@@ -330,3 +333,5 @@ describe('useNodeSelection', () => {
     expect(result.current.error).toBeNull()
   })
 })
+
+function useNodeSelection(options: Parameters<typeof actualUseNodeSelection>[0]) { return actualUseNodeSelection({ workspace: currentWorkspace, ...options }) }

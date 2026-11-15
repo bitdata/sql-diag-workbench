@@ -1,5 +1,8 @@
 package com.bitdata.sqlworkbench.sql.diff;
 
+import com.bitdata.sqlworkbench.session.GraphHttpFixtures;
+import com.bitdata.sqlworkbench.session.SessionStore;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -13,6 +16,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 class DiffControllerTest {
+
+    @Autowired SessionStore sessions;
+    String admit(String body) throws Exception { return GraphHttpFixtures.admit(body,sessions); }
 
     @Autowired
     private MockMvc mvc;
@@ -28,13 +34,14 @@ class DiffControllerTest {
             """;
         mvc.perform(post("/api/diff")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(body))
+                .content(admit(body)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.ops.length()").value(1))
             .andExpect(jsonPath("$.ops[0].kind").value("MOD"))
-            .andExpect(jsonPath("$.ops[0].nodeType").value("EXPR_LESS_THAN_OR_EQUAL"))
-            .andExpect(jsonPath("$.ops[0].oldText").value("b<20"))
-            .andExpect(jsonPath("$.ops[0].newText").value("b<=20"));
+            .andExpect(jsonPath("$.ops[0].nodeType").value("EXPRESSION"))
+            .andExpect(jsonPath("$.ops[0].displayScope").value("AST_NODE"))
+            .andExpect(jsonPath("$.ops[0].oldText").value("B < 20"))
+            .andExpect(jsonPath("$.ops[0].newText").value("B <= 20"));
     }
 
     @Test
@@ -44,7 +51,7 @@ class DiffControllerTest {
             "{\"before\":\"%s\",\"after\":\"%s\",\"dialect\":\"postgresql\"}", sql, sql);
         mvc.perform(post("/api/diff")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(body))
+                .content(admit(body)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.ops.length()").value(0));
     }
@@ -53,7 +60,7 @@ class DiffControllerTest {
     void diff_validatesMissingBefore() throws Exception {
         mvc.perform(post("/api/diff")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"after\":\"SELECT 1\",\"dialect\":\"postgresql\"}"))
+                .content(admit("{\"after\":\"SELECT 1\",\"dialect\":\"postgresql\"}")))
             .andExpect(status().isBadRequest());
     }
 }

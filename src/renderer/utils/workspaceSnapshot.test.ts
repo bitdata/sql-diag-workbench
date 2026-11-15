@@ -19,6 +19,14 @@ function fixture() {
   return snapshotWorkspace(ws,root,dag,'shared','parsed SQL')
 }
 describe('versioned workspace snapshot', () => {
+  it.each(['postgresql', 'mysql', 'sqlserver', 'oracle'] as const)('saves an unparsed draft with its current %s dialect', dialect => {
+    const raw = snapshotWorkspace({ ...ws, dialect }, null, createDAGState(), null, '', 'postgresql')
+    expect(readSnapshot(raw).snapshot.dialect).toBe(dialect)
+  })
+  it('preserves the parsed dialect of an existing graph after connection changes', () => {
+    const tree = node('root')
+    expect(JSON.parse(snapshotWorkspace({ ...ws, dialect: 'sqlserver' }, tree, legacyDAG(tree), 'root', 'SELECT 1', 'postgresql')).dialect).toBe('postgresql')
+  })
   it('keeps new completeness in graph and projection without upgrading old summaries', () => {
     const raw=JSON.parse(fixture())
     raw.graph.nodes[0].executionSummary={rows:2,durationMs:3,resultCompleteness:{state:'TRUNCATED',appliedLimit:2,errorReason:null}}

@@ -13,6 +13,27 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /** P2-13：规模守卫 + 限内行为不变。 */
 class AstLcsDifferTest {
 
+    @Test
+    void unpairedDeletionsAndDuplicateOccurrencesSurviveMerging() {
+        List<NodeToken> before = List.of(tok("EXPRESSION", "p0", "a=1"),
+            tok("EXPRESSION", "p1", "a=1"), tok("EXPRESSION", "p2", "b=2"));
+        Set<ChangeOp> ops = AstLcsDiffer.diff(before, List.of(before.get(0)));
+        assertEquals(2, ops.size());
+        assertTrue(ops.stream().allMatch(op -> op.kind() == ChangeOp.Kind.DEL));
+        assertEquals(3, AstLcsDiffer.diff(before, List.of()).size());
+    }
+
+    @Test
+    void pathFallbackDetectsTypeChangesEvenWithIdenticalText() {
+        List<NodeToken> before = seq("a", 2100);
+        List<NodeToken> after = new ArrayList<>(before);
+        after.set(0, tok("LITERAL", "p0", "a0"));
+        DiffResult result = AstLcsDiffer.diffResult(before, after);
+        assertTrue(result.degraded());
+        assertEquals(1, result.ops().size());
+        assertEquals(ChangeOp.Kind.MOD, result.ops().iterator().next().kind());
+    }
+
     /** NodeToken record order: (nodeType, canonicalText, path). */
     private static NodeToken tok(String type, String path, String text) {
         return new NodeToken(type, text, path);

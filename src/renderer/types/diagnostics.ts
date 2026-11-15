@@ -76,10 +76,20 @@ export interface TraceEvidence {
 
 export type TraceOverallStatus = 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'CANCELLED' | 'FAILED'
 
+export interface DiagnosticLifecycle {
+  version: 1; revision: number; settled: boolean
+  cancelSignal: 'NOT_REQUESTED' | 'NOT_REQUIRED' | 'PENDING' | 'SENT' | 'FAILED' | 'REJECTED'
+  cleanup: 'NOT_STARTED' | 'PENDING' | 'NO_RESOURCES' | 'CLOSED' | 'UNCONFIRMED'
+  errorReason: string | null; degraded: boolean; resourceObservation: Record<string, unknown>
+  serverExecution: 'UNKNOWN'; applicationCleanup: 'UNCONFIRMED'
+}
+
 export interface TraceProgress {
+  lifecycle?: DiagnosticLifecycle
+  observationKind?: 'GRAPH' | 'INDEPENDENT_SOURCE'
   mode?: 'EXISTENCE' | 'CARDINALITY'
   quantity?: QuantityEvidence | null
-  cancelSignal?: { state: 'NOT_REQUIRED' | 'PENDING' | 'SENT' | 'FAILED'; errorReason: string | null } | null
+  cancelSignal?: { state: DiagnosticLifecycle['cancelSignal']; errorReason: string | null } | null
   evidence?: TraceEvidence | null
   traceId: string
   status: TraceOverallStatus

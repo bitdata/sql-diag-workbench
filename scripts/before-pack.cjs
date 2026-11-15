@@ -3,6 +3,12 @@ const path = require('node:path');
 const { isBuiltin } = require('node:module');
 const { root, verifyRuntime } = require('./windows-runtime.cjs');
 module.exports = async context => {
+  for (const guide of ['tutorials.en.pdf', 'tutorials.zh-CN.pdf']) {
+    const file = path.join(root, 'docs/tutorials', guide);
+    if (!fs.existsSync(file) || fs.readFileSync(file).subarray(0, 5).toString() !== '%PDF-') {
+      throw Error(`Missing tutorial PDF: ${guide}. Run python scripts/build-tutorial-pdfs.py first.`);
+    }
+  }
   // node_modules is excluded: fail the build if main/preload gain an external dependency.
   for (const entry of ['out/main/index.js', 'out/preload/index.js']) {
     const code = fs.readFileSync(path.join(root, entry), 'utf8');

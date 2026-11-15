@@ -1,8 +1,9 @@
+import { currentWorkspace } from '../../test/currentWorkspace'
 // src/renderer/hooks/__tests__/useDiffGraph.test.ts
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import React from 'react'
 import { render, waitFor } from '@testing-library/react'
-import { useDiffGraph } from '../useDiffGraph'
+import { useDiffGraph as actualuseDiffGraph } from '../useDiffGraph'
 import type { FragmentNode } from '../../types/fragment'
 import type { ChangeOp } from '../useChangeAttribution'
 
@@ -24,7 +25,7 @@ function leaf(id: string, sql: string, children: FragmentNode[] = []): FragmentN
 }
 
 function op(kind: ChangeOp['kind'], path: string): ChangeOp {
-  return { kind, nodeType: 'SELECT', path, oldText: null, newText: null }
+  return { comparisonKey: `${kind}:${path}`, kind, nodeType: 'SELECT', path, oldText: null, newText: null }
 }
 
 function mockFetch(ops: ChangeOp[]) {
@@ -543,3 +544,5 @@ describe('useDiffGraph', () => {
     }
   })
 })
+
+function useDiffGraph(chain: FragmentNode[], all: FragmentNode[], url: string | null, dialect: import('../../types/session').SqlDialect) { return actualuseDiffGraph(chain,all,url,dialect,currentWorkspace) }

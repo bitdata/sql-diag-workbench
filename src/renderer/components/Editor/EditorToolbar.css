@@ -54,3 +54,15 @@
 .editor-toolbar .mode-toggle {
   height: 28px;
 }
+
+.editor-feedback {
+  margin: 0;
+  padding: var(--space-xs) var(--space-sm);
+  color: var(--warning);
+  font-size: 12px;
+}
+
+.execution-cleanup-details {
+  font-size: 11px;
+  color: var(--text-secondary);
+}

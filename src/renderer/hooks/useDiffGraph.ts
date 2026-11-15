@@ -1,3 +1,5 @@
+import { graphRequest } from '../utils/workspaceIdentity'
+import type { SessionWorkspaceState } from '../types/session'
 import { apiFetch } from '../utils/api'
 import { useEffect, useState, useRef } from 'react'
 import type { FragmentNode } from '../types/fragment'
@@ -88,7 +90,7 @@ function isOpSubset(child: ChangeOp[], parent: ChangeOp[]): boolean {
 }
 
 function opKey(op: ChangeOp): string {
-  return `${op.kind}|${op.nodeType}|${op.path}|${op.oldText ?? ''}|${op.newText ?? ''}`
+  return op.comparisonKey ?? `${op.kind}|${op.nodeType}|${op.path}|${op.oldText ?? ''}|${op.newText ?? ''}`
 }
 
 interface FetchDiffResult {
@@ -102,12 +104,13 @@ async function fetchDiff(
   before: string,
   after: string,
   dialect: SqlDialect,
-  signal: AbortSignal
+  signal: AbortSignal,
+  workspace?: SessionWorkspaceState | null
 ): Promise<FetchDiffResult> {
   const res = await apiFetch(`${backendUrl}/api/diff`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ before, after, dialect }),
+    body: JSON.stringify({ before, after, dialect, ...graphRequest(workspace) }),
     signal,
   })
   if (!res.ok) {
@@ -134,7 +137,8 @@ export function useDiffGraph(
   chain: FragmentNode[],
   allNodes: FragmentNode[],
   backendUrl: string | null,
-  dialect: SqlDialect
+  dialect: SqlDialect,
+  workspace?: SessionWorkspaceState | null
 ): State {
   const [state, setState] = useState<State>({
     ghosts: [],
@@ -167,15 +171,15 @@ export function useDiffGraph(
         const results = await Promise.all(
           ghosts.map(async (g) => {
             const [dResult, rootResult] = await Promise.all([
-              fetchDiff(backendUrl, current.sqlFragment, g.node.sqlFragment, dialect, controller.signal),
-              fetchDiff(backendUrl, root.sqlFragment, g.node.sqlFragment, dialect, controller.signal),
+              fetchDiff(backendUrl, current.sqlFragment, g.node.sqlFragment, dialect, controller.signal, workspace),
+              fetchDiff(backendUrl, root.sqlFragment, g.node.sqlFragment, dialect, controller.signal, workspace),
             ])
             return {
               ghost: g,
               dOps: dResult.ops,
               degraded: dResult.degraded,
               diffMethod: dResult.diffMethod,
-              isVirtual: isOpSubset(dResult.ops, rootResult.ops),
+              isVirtual: !dResult.degraded && !rootResult.degraded && dResult.ops.every(o => !!o.comparisonKey) && rootResult.ops.every(o => !!o.comparisonKey) && isOpSubset(dResult.ops, rootResult.ops),
             }
           })
         )
@@ -205,7 +209,7 @@ export function useDiffGraph(
     })()
 
     return () => controller.abort()
-  }, [chain, allNodes, backendUrl, dialect])
+  }, [chain, allNodes, backendUrl, dialect, workspace?.sessionId, workspace?.identityPolicy, workspace?.workspaceRevision, workspace?.loadEpoch])
 
   return state
 }

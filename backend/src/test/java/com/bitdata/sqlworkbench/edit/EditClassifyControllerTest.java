@@ -1,5 +1,8 @@
 package com.bitdata.sqlworkbench.edit;
 
+import com.bitdata.sqlworkbench.session.GraphHttpFixtures;
+import com.bitdata.sqlworkbench.session.SessionStore;
+
 import com.bitdata.sqlworkbench.audit.EditAuditStore;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,6 +29,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 class EditClassifyControllerTest {
 
+    @Autowired SessionStore sessions;
+    String admit(String body) throws Exception { return GraphHttpFixtures.admit(body,sessions); }
+
     @Autowired
     private MockMvc mvc;
 
@@ -38,14 +44,14 @@ class EditClassifyControllerTest {
         // tree walk yields no match and the classifier must return EDIT.
         mvc.perform(post("/api/edit/classify")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("""
+                .content(admit("""
                     {
                       "sessionId": "non-existent-session",
                       "before": "SELECT * FROM t WHERE a>0",
                       "after":  "SELECT * FROM t WHERE a>0 AND b<20",
                       "dialect": "postgresql"
                     }
-                    """))
+                    """)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.action").value("EDIT"))
             .andExpect(jsonPath("$.equivalentNodeId").doesNotExist())
@@ -57,13 +63,13 @@ class EditClassifyControllerTest {
     void classify_validatesMissingSessionId() throws Exception {
         mvc.perform(post("/api/edit/classify")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("""
+                .content(admit("""
                     {
                       "before": "SELECT 1",
                       "after":  "SELECT 1",
                       "dialect": "postgresql"
                     }
-                    """))
+                    """)))
             .andExpect(status().isBadRequest());
     }
 
@@ -71,14 +77,14 @@ class EditClassifyControllerTest {
     void classify_validatesBlankBefore() throws Exception {
         mvc.perform(post("/api/edit/classify")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("""
+                .content(admit("""
                     {
                       "sessionId": "x",
                       "before": "",
                       "after":  "SELECT 1",
                       "dialect": "postgresql"
                     }
-                    """))
+                    """)))
             .andExpect(status().isBadRequest());
     }
 
@@ -88,14 +94,14 @@ class EditClassifyControllerTest {
         long before = countAuditRows();
         mvc.perform(post("/api/edit/classify")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("""
+                .content(admit("""
                     {
                       "sessionId": "audit-write-test",
                       "before": "SELECT * FROM t",
                       "after":  "SELECT * FROM t WHERE x>0",
                       "dialect": "postgresql"
                     }
-                    """))
+                    """)))
             .andExpect(status().isOk());
         long after = countAuditRows();
         org.junit.jupiter.api.Assertions.assertTrue(after > before,

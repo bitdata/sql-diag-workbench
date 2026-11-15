@@ -1,5 +1,5 @@
 import { tr, useLocale, getLocale } from './i18n'
-import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
+import { useState, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { flushSync } from 'react-dom'
 import { useBackendStatus } from './hooks/useBackendStatus'
 import { useBackendUrl, useBackendUrlState } from './hooks/useBackendUrl'
@@ -18,6 +18,7 @@ import { usePanelResize } from './hooks/usePanelResize'
 import { useNodeSelection } from './hooks/useNodeSelection'
 import { useTabs } from './hooks/useTabs'
 import { useRowTrace } from './hooks/useRowTrace'
+import { diagnosticContext } from './utils/workspaceIdentity'
 import { useEditorActions } from './hooks/useEditorActions'
 import { useSessionLifecycle } from './hooks/useSessionLifecycle'
 import { useWorkspaceExit } from './hooks/useWorkspaceExit'
@@ -130,6 +131,7 @@ function AppInner() {
   const { url: backendUrl, settled: backendUrlSettled, error: backendUrlError } = useBackendUrlState()
   const {
     connections,
+    connLoading,
     connError,
     selectedConnectionId: defaultConnectionId,
     setSelectedConnectionId,
@@ -247,6 +249,8 @@ function AppInner() {
     },
     { maxRows: settings.rowLimit, queryTimeout: settings.queryTimeout },
     { sessionId: tabsApi.activeSessionId, dialect: effectiveDialect, connectionId: selectedConnectionId,
+      instanceId: tabsApi.activeWorkspace?.workspaceInstanceId,
+      loadEpoch: tabsApi.activeWorkspace?.loadEpoch, openSessionIds: tabsApi.tabs.map(tab => tab.sessionId),
       sql: isBrowsing ? selectedNode?.sqlFragment : tabsApi.activeWorkspace?.sql, revision: treeEpoch }
   )
 
@@ -266,7 +270,23 @@ function AppInner() {
       } : null, currentMode === 'performance', isWorkspaceExitLocked())
 
   // Row trace: async polling hook for Expected Row Trace feature.
-  const rowTrace = useRowTrace(backendUrl, JSON.stringify([tabsApi.activeSessionId, selectedConnectionId, treeEpoch]))
+  const traceScope = JSON.stringify([tabsApi.activeSessionId, tabsApi.activeWorkspace?.workspaceInstanceId,
+    tabsApi.activeWorkspace?.loadEpoch, selectedConnectionId, treeEpoch])
+  const diagnosticOwner = useRef({ workspace: tabsApi.activeWorkspace, scope: traceScope })
+  diagnosticOwner.current = { workspace: tabsApi.activeWorkspace, scope: traceScope }
+  const prepareDiagnostic = async () => {
+    const captured = diagnosticOwner.current, ws = captured.workspace
+    diagnosticContext(ws)
+    if (isWorkspaceExitLocked() || !ws || !tabsApi.flushWorkspaces) throw new Error('WORKSPACE_UNAVAILABLE')
+    const report = await tabsApi.flushWorkspaces()
+    const latest = diagnosticOwner.current.workspace
+    if (isWorkspaceExitLocked() || diagnosticOwner.current.scope !== captured.scope || !latest || latest.sql !== ws.sql ||
+      latest.workspaceSnapshotJson !== ws.workspaceSnapshotJson || latest.connectionId !== ws.connectionId) throw new Error('WORKSPACE_CHANGED')
+    const revision = report.workspaceRevisions?.[ws.sessionId]
+    if (report.issues.some(i => !i.sessionId || i.sessionId === ws.sessionId) || revision === undefined) throw new Error('WORKSPACE_SAVE_UNCONFIRMED')
+    return diagnosticContext({ ...latest, workspaceRevision: revision })
+  }
+  const rowTrace = useRowTrace(backendUrl, traceScope, prepareDiagnostic, effectiveDialect)
 
   const sessions = useSessions(backendUrl)
   const history = useHistory(backendUrl)
@@ -334,11 +354,12 @@ function AppInner() {
   useEffect(() => { if (evidenceReveal && !validEvidenceReveal) setEvidenceReveal(null) }, [evidenceReveal, validEvidenceReveal])
 
   const handleBuildUpward = useCallback((nodeId: string) => {
+    if (tabsApi.activeWorkspace?.readOnly) return
     // enter() 内部已 selectNode(seed)；已激活时只切换选中面。
     if (!addBackActive) enterAddBack(nodeId)
     else selectNode(nodeId)
     setBuildPanelOpen(true)
-  }, [addBackActive, enterAddBack, selectNode])
+  }, [addBackActive, enterAddBack, selectNode, tabsApi.activeWorkspace?.readOnly])
 
   const closeBuildPanel = useCallback(() => setBuildPanelOpen(false), [])
 
@@ -389,12 +410,14 @@ function AppInner() {
     currentSql,
     setCurrentSql,
     handleParse,
+    parsePreparationError,
     handleRunCurrent,
     handleAnalyzeWithMode,
     handleSqlChange,
     handleNewSession,
     handleVerifyFinding,
     handleFormat,
+    formatError,
     handleNodeSelect,
     viewerSql,
     viewerReadOnly,
@@ -410,6 +433,7 @@ function AppInner() {
     currentMode,
     dialect: effectiveDialect,
     parse,
+    hasParsedTree: !!result?.tree,
     clearParseResult,
     fetchPositions: (sql, dialect) => fetchPositionsRef.current(sql, dialect),
     clearPositions: () => clearPositionsRef.current(),
@@ -425,7 +449,7 @@ function AppInner() {
     fetchPositions,
     clearPositions,
     selectNodeAtOffset,
-  } = useNodeSelection({ backendUrl: backendUrl ?? '', onSelectNode: handleNodeSelect })
+  } = useNodeSelection({ workspace: tabsApi.activeWorkspace, backendUrl: backendUrl ?? '', onSelectNode: handleNodeSelect })
 
   // Populate the refs so useEditorActions callbacks can reach fetchPositions/clearPositions
   fetchPositionsRef.current = fetchPositions
@@ -462,6 +486,7 @@ function AppInner() {
   const compareRef = useRef<CompareHandle>(null)
   const taskNotices = useTaskNotices()
   const openCompare = (secondNodeId?: string) => {
+    if (tabsApi.activeWorkspace?.readOnly) return
     if (workspaceExit.locked || execution.loading || execution.submitting || diagnostics.verifyingIds.size || parseLoading) return
     flushSync(() => checkpoint())
     compare.open(secondNodeId)
@@ -617,14 +642,30 @@ function AppInner() {
     return true
   }, [createConnection, updateConnection])
 
+  // A delete may finish after the user changes tabs or connection selection.
+  const connectionBackendEpoch = useMemo(() => ({}), [backendUrl])
+  const deletionOwner = {
+    backendEpoch: connectionBackendEpoch,
+    sessionId: tabsApi.activeSessionId,
+    loadEpoch: tabsApi.activeWorkspace?.loadEpoch,
+    instanceId: tabsApi.activeWorkspace?.workspaceInstanceId,
+    connectionId: selectedConnectionId,
+    select: handleConnectionSelect,
+  }
+  const deletionOwnerRef = useRef(deletionOwner)
+  useLayoutEffect(() => { deletionOwnerRef.current = deletionOwner })
   const handleDeleteConnection = useCallback(async (id: string) => {
+    const owner = deletionOwnerRef.current
     const deleted = await deleteConnection(id)
     if (!deleted) return false
-    if (selectedConnectionId === id) {
-      handleConnectionSelect(null)
+    const latest = deletionOwnerRef.current
+    if (latest.backendEpoch === owner.backendEpoch && latest.sessionId === owner.sessionId
+      && latest.loadEpoch === owner.loadEpoch && latest.instanceId === owner.instanceId
+      && latest.connectionId === id) {
+      latest.select(null)
     }
     return true
-  }, [deleteConnection, selectedConnectionId, handleConnectionSelect])
+  }, [deleteConnection])
 
   const handleEditConnection = useCallback((id: string) => {
     overlayRef.current?.openConnectionDialog(id)
@@ -652,11 +693,6 @@ function AppInner() {
   return (
     <ExperimentSourcesContext.Provider value={dag}>
     <div className={`app ${settings.theme === 'high-contrast' ? 'theme-high-contrast' : settings.theme === 'light' ? 'theme-light' : ''}`}>
-      {taskNotices.length > 0 && <div className="task-notices" aria-label={tr("Query cleanup notices")}>
-        {taskNotices.map(notice => <div key={notice.id} role="alert" data-error-reason={notice.errorReason}>
-          <span>{notice.message}</span><button onClick={() => dismissTaskNotice(notice.id)}>{tr("Dismiss")}</button>
-        </div>)}
-      </div>}
       {tabsApi.activeWorkspace?.recoveryError && (
         <BootErrorBanner label="Workspace recovery needs attention" severity="warning"
           message={tabsApi.activeWorkspace.recoveryError}
@@ -691,6 +727,15 @@ function AppInner() {
           here, and the degradation is that this workspace has no backend
           session, so autosave/lineage sync are no-ops and localStorage is the
           only persistence left. */}
+      {tabsApi.activeWorkspace?.readOnly && <div className="query-notice" role="status">
+        {tr("This saved exploration is read-only. Copy its SQL into a new exploration to continue.")}{' '}
+        <button className="toolbar-btn toolbar-btn-ghost" disabled={workspaceExit.locked || booting}
+          onClick={() => { const ws = tabsApi.activeWorkspace; if (ws) void tabsApi.openInNewTab(selectedNode?.sqlFragment ?? ws.sql,
+            { name: tr('New exploration'), dialect: ws.dialect, connectionId: ws.connectionId }) }}>
+          {tr('Copy SQL to new exploration')}
+        </button>
+      </div>}
+      {parsePreparationError && <BootErrorBanner label="Could not prepare SQL parsing" message={parsePreparationError} onRetry={handleParse} retrying={false} />}
       {sessionSyncError && (
         <BootErrorBanner
           label="Could not save this workspace to the backend"
@@ -722,6 +767,9 @@ function AppInner() {
           <strong>SQL Diagnostic Workbench</strong>
         </div>
         <div className="toolbar-right">
+          <button className="toolbar-btn toolbar-btn-ghost" onClick={() => overlayRef.current?.openAbout()}>
+            {tr('About')}
+          </button>
           <button className="toolbar-btn toolbar-btn-ghost" onClick={() => overlayRef.current?.openSettings()} title={tr("Settings")}>
             &#9881;
           </button>
@@ -742,9 +790,10 @@ function AppInner() {
       {!compare.state && <div className="query-context" aria-label={tr("Current query context")}>
         <span>{tr("Query connection")}</span>
         <ConnectionManager connections={connections} selectedConnectionId={selectedConnectionId}
+          loading={connLoading} error={connError} onRetry={fetchConnections} onDelete={handleDeleteConnection}
           onSelect={handleConnectionSelect} onManage={handleManageConnections} onEdit={handleEditConnection} />
         <span className="query-database">{queryConnection ? `${queryConnection.host}:${queryConnection.port} / ${queryConnection.database}` : selectedConnectionId ? tr("Saved connection unavailable — choose a connection") : tr("Offline · execution requires a connection")}</span>
-        <label>{tr("Dialect")}{" "}<select aria-label={tr("Query dialect")} value={effectiveDialect} disabled={!!queryConnection || workspaceExit.locked || booting}
+        <label>{tr("Dialect")}{" "}<select aria-label={tr("Query dialect")} value={effectiveDialect} disabled={!!queryConnection || workspaceExit.locked || booting || !!tabsApi.activeWorkspace?.readOnly}
           onChange={event => { if (tabsApi.activeSessionId) tabsApi.updateWorkspace(tabsApi.activeSessionId, { dialect: event.target.value as SqlDialect, isDirty: true }) }}>
           <option value="postgresql">PostgreSQL</option><option value="mysql">MySQL</option>
           <option value="sqlserver">SQL Server</option><option value="oracle">Oracle</option>
@@ -844,9 +893,11 @@ function AppInner() {
                     <span className="breadcrumb-item">{selectedNode.label}</span>
                   </>
                 )}
-                {viewerMode === 'browse' && <button className="toolbar-btn" onClick={() => {
-                  if (!workspaceExit.locked && tabsApi.activeSessionId) tabsApi.updateWorkspace(tabsApi.activeSessionId, { viewerMode: 'input' })
-                }}>{tr("← Edit original SQL")}</button>}
+                {result?.tree && <button className="toolbar-btn" disabled={workspaceExit.locked || edit.pending || !!tabsApi.activeWorkspace?.readOnly}
+                  onClick={() => {
+                    const node = viewerMode === 'browse' ? selectedNode : result.tree
+                    if (node) handleEditNode(node.id, viewerMode === 'browse' ? node.sqlFragment : currentSql, node.label)
+                  }}>{tr("Edit SQL in new tab")}</button>}
               </div>
               {result?.tree && (parsedSql !== currentSql || parsedDialect !== effectiveDialect) && <div className="query-notice" role="status">
                 {tr("Decomposition is out of date")}{parsedDialect !== effectiveDialect ? tr(" (dialect changed)") : tr(" (SQL edited)")}{tr(". Parse current SQL to refresh fragments.")}{" "}</div>}
@@ -858,7 +909,7 @@ function AppInner() {
                     <button
                       className="toolbar-btn toolbar-btn-primary"
                       onClick={handleParse}
-                      disabled={!currentSql.trim() || parseLoading}
+                      disabled={!currentSql.trim() || parseLoading || !!tabsApi.activeWorkspace?.readOnly}
                       title={tr("Parse current SQL (Ctrl+Shift+Enter)")}
                     >
                       {tr("⚡ Parse")}{" "}<kbd>Ctrl+Shift+Enter</kbd>
@@ -881,7 +932,7 @@ function AppInner() {
                         &#9654; {isBrowsing ? tr("Execute fragment") : tr("Execute SQL")}
                       </button>
                     )}
-                    {(isExecuting || execution.errorReason === 'STATUS_UNAVAILABLE' || execution.errorReason === 'CANCEL_UNCONFIRMED') && (
+                    {(isExecuting || ['STATUS_UNAVAILABLE', 'RESOURCE_CLEANUP_UNCONFIRMED'].includes(execution.errorReason ?? '') || execution.errorReason === 'CANCEL_UNCONFIRMED') && (
                       <button
                         className="toolbar-btn toolbar-btn-cancel"
                         onClick={() => execution.cancel()}
@@ -889,20 +940,17 @@ function AppInner() {
                       >
                         {tr("■ Stop")}{" "}</button>
                     )}
-                    {execution.errorReason === 'STATUS_UNAVAILABLE' && <button className="toolbar-btn"
-                      onClick={execution.retryStatus}>{tr("Retry status")}</button>}
                   </div>
 
                   {/* Transform Group - Format */}
                   <div className="toolbar-group toolbar-group-transform">
-                    {viewerMode === 'input' && currentSql.trim() && (
                       <button
                         className="toolbar-btn toolbar-btn-ghost"
                         onClick={handleFormat}
-                        title={tr("Format SQL (Ctrl+Shift+F)")}
+                        disabled={viewerReadOnly || workspaceExit.locked || !currentSql.trim()}
+                        title={tr(result?.tree ? "Edit the fragment to format its SQL" : "Format SQL (Ctrl+Shift+F)")}
                       >
                         {tr("↻ Format")}{" "}</button>
-                    )}
                   </div>
 
                   <OptimizationPanel backendUrl={backendUrl} sessionId={tabsApi.activeSessionId}
@@ -927,11 +975,12 @@ function AppInner() {
                     <button className="toolbar-btn toolbar-btn-ghost" onClick={handleNewSession} disabled={workspaceExit.locked || booting} title={tr("New tab (Ctrl+N)")}>{tr("+ New")}</button>
                   </div>
                 </div>
+              {formatError && <p className="editor-feedback" role="alert">{tr(formatError)}</p>}
               {selectedNodeId && <ExperimentContext key={`${tabsApi.activeSessionId}:${selectedConnectionId}:${treeEpoch}:${selectedNodeId}`} nodeId={selectedNodeId} dag={dag} onRetry={decomposeNode} />}
               <SqlViewer
                 value={viewerSql}
                 onChange={handleSqlChange}
-                readOnly={viewerReadOnly || workspaceExit.locked}
+                readOnly={viewerReadOnly || workspaceExit.locked || !!tabsApi.activeWorkspace?.readOnly}
                 // PR-2 (spec §6.1 item 2): the read-only gate needs a visible
                 // explanation. Also covers `+`/openInNewTab, which share the
                 // same boot surface.
@@ -955,6 +1004,16 @@ function AppInner() {
               <ExecutionStatusInline loading={isExecuting} status={execution.status} error={null}
                 dataResult={execution.dataResult} planResult={execution.planResult} startedAt={execution.startedAt}
                 mode={currentMode} queryTimeoutSeconds={settings.queryTimeout} onCancel={execution.cancel} />
+              {execution.cleanupPending && <span>{tr('Waiting for resource cleanup confirmation')}</span>}
+              {['STATUS_UNAVAILABLE', 'RESOURCE_CLEANUP_UNCONFIRMED', 'CANCEL_UNCONFIRMED'].includes(execution.errorReason ?? '') && <span>
+                {tr('Cancellation or cleanup is not confirmed. Check status explicitly; database work may still be active.')}{' '}
+                <button onClick={execution.retryStatus}>{tr('Check cleanup status')}</button>
+              </span>}
+              {execution.lifecycle && <details className="execution-cleanup-details">
+                <summary>{tr('Diagnostic resource cleanup')}</summary>
+                <p>{tr('Resource cleanup:')} {execution.lifecycle.cleanup} · {tr('Cancellation signal:')} {execution.lifecycle.cancelSignal}</p>
+                {execution.errorReason && <p>{execution.errorReason}</p>}
+              </details>}
             </div>
             <ResultsPanel
               backendUrl={backendUrl}
@@ -968,7 +1027,7 @@ function AppInner() {
               fragmentTreeJson={traceTreeJson}
               connectionId={selectedConnectionId}
               sessionId={tabsApi.activeSessionId}
-              draftScope={JSON.stringify([tabsApi.activeSessionId, selectedConnectionId, treeEpoch])}
+              draftScope={traceScope}
               checkMappingReveal={mappingRevealAvailability}
               onMappingReveal={(request: MappingRevealRequest) => {
                 const availability = mappingRevealAvailability(request)
@@ -980,11 +1039,12 @@ function AppInner() {
               }}
               rowTrace={{ ...rowTrace, trace: (connectionId, tree, keys, options) => rowTrace.trace(connectionId, tree, keys,
                 { ...options, transformEdges: [...dag.ruleResults.values()].flatMap(r => r.outputs ?? []) }) }}
+              prepareDiagnostic={prepareDiagnostic}
               canLocateEvidence={(id, sql) => !workspaceExit.locked && !!rowTrace.snapshot &&
-                rowTrace.snapshot.scope === JSON.stringify([tabsApi.activeSessionId, selectedConnectionId, treeEpoch]) &&
+                rowTrace.snapshot.scope === traceScope &&
                 rowTrace.snapshot.sqlById[id] === sql && dag.nodeMap.get(id)?.sqlFragment === sql}
               onLocateEvidence={(id, sql) => {
-                if (workspaceExit.locked || !rowTrace.snapshot || rowTrace.snapshot.scope !== JSON.stringify([tabsApi.activeSessionId, selectedConnectionId, treeEpoch]) ||
+                if (workspaceExit.locked || !rowTrace.snapshot || rowTrace.snapshot.scope !== traceScope ||
                   rowTrace.snapshot.sqlById[id] !== sql || dag.nodeMap.get(id)?.sqlFragment !== sql) return
                 if (addBackActive) exitAddBack()
                 handleNodeSelect(id)
@@ -1000,6 +1060,12 @@ function AppInner() {
         </div>
       </div>
 
+      {taskNotices.length > 0 && <details className="task-notices execution-cleanup-details" aria-label={tr("Query cleanup notices")}>
+        <summary>{tr('Unconfirmed task cleanup ({0})', taskNotices.length)}</summary>
+        {taskNotices.map(notice => <div key={notice.id} role="alert" data-error-reason={notice.errorReason}>
+          <span>{tr(notice.message)}</span><button onClick={() => dismissTaskNotice(notice.id)}>{tr("Dismiss")}</button>
+        </div>)}
+      </details>}
       <div className="app-statusbar">          <div className="connection-indicator">
             <InvestigationHistory backendUrl={backendUrl} />
             <span
@@ -1011,7 +1077,7 @@ function AppInner() {
           </div>
       {tabsApi.activeWorkspace?.hydration === 'ready' && (
         <div role="status" aria-label={tr("Workspace save status")} className="workspace-save-status">
-          {tabsApi.activeWorkspace.syncStatus === 'failed' ? tr("Workspace save failed")
+          {tabsApi.activeWorkspace.readOnly ? tr('Read-only exploration') : tabsApi.activeWorkspace.syncStatus === 'failed' ? tr("Workspace save failed")
             : tabsApi.activeWorkspace.syncStatus === 'pending' || tabsApi.activeWorkspace.isDirty ? tr("Saving workspace…") : tr("Workspace saved")}
         </div>
       )}
@@ -1029,7 +1095,7 @@ function AppInner() {
       {/* All dialogs/modals managed by OverlayHost (Task 5 refactor) */}
       {workspaceExit.state && <WorkspaceExitDialog result={workspaceExit.state.result}
         onRetry={workspaceExit.retry} onCancel={workspaceExit.cancel} onDiscard={workspaceExit.discard} />}
-      <OverlayHost
+      <OverlayHost workspace={tabsApi.activeWorkspace}
         storage={storage}
         ref={overlayRef}
         connections={connections}

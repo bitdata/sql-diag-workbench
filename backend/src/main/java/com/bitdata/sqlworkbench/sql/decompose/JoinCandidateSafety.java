@@ -11,8 +11,13 @@ final class JoinCandidateSafety {
 
     String key(SqlIdentifier id,int index) {
         String value=id.names.get(index);
+        if("oracle".equalsIgnoreCase(dialect))return value;
         boolean quoted=id.isComponentQuoted(index)||id.names.size()==1&&id.getParserPosition().isQuoted();
         return "mysql".equalsIgnoreCase(dialect)||!quoted?value.toLowerCase(Locale.ROOT):value;
+    }
+    String columnKey(SqlIdentifier id) {
+        if(!"oracle".equalsIgnoreCase(dialect))return id.toString().toUpperCase();
+        return id.names.stream().map(v->v.length()+":"+v).collect(java.util.stream.Collectors.joining());
     }
     String alias(SqlNode n) {
         if(n instanceof SqlCall c&&c.getKind()==SqlKind.AS&&c.operand(1) instanceof SqlIdentifier id)return key(id,id.names.size()-1);

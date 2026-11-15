@@ -27,7 +27,13 @@ public class SessionController {
     public SessionController(SessionStore sessionStore, ObjectMapper json) { this.sessionStore = sessionStore; this.json = json; }
     public record CreateSessionRequest(String id, String name, String sqlText, String dialect,
             String connectionId, String fragmentTreeJson, String workspaceSnapshotJson, SessionEditLink.Origin editOrigin,
-            String creationRequestId, String workspaceProfileId) {
+            String creationRequestId, String workspaceProfileId, IdentityContext identityContext) {
+        public CreateSessionRequest(String id,String name,String sqlText,String dialect,String connectionId,
+                String fragmentTreeJson,String workspaceSnapshotJson,SessionEditLink.Origin editOrigin,
+                String creationRequestId,String workspaceProfileId) {
+            this(id,name,sqlText,dialect,connectionId,fragmentTreeJson,workspaceSnapshotJson,editOrigin,
+                creationRequestId,workspaceProfileId,null);
+        }
         public CreateSessionRequest(String id, String name, String sqlText, String dialect, String connectionId,
                 String fragmentTreeJson, String workspaceSnapshotJson, SessionEditLink.Origin editOrigin, String creationRequestId) {
             this(id,name,sqlText,dialect,connectionId,fragmentTreeJson,workspaceSnapshotJson,editOrigin,creationRequestId,null);
@@ -45,6 +51,7 @@ public class SessionController {
     }
     @PostMapping public Session create(@RequestBody CreateSessionRequest req) {
         try { return createValidated(req); }
+        catch (WorkspaceIdentity.Failure e) { throw e; }
         catch (SessionStore.CreationFailure e) { throw e; }
         catch (ResponseStatusException e) { throw new SessionStore.CreationFailure("CREATION_VALIDATION_ERROR", e.getReason()); }
         catch (DataAccessException | CannotCreateTransactionException e) {
@@ -72,23 +79,55 @@ public class SessionController {
         var origin = req.editOrigin();
         if (origin != null && (blank(origin.sourceSessionId()) || blank(origin.sourceNodeId()) || blank(origin.targetNodeId()) || origin.sourceTabName() == null))
             throw bad("Invalid edit origin");
-        String tree = req.workspaceSnapshotJson() == null ? req.fragmentTreeJson() : snapshotTree(req.workspaceSnapshotJson());
-        return sessionStore.createWithOrigin(Session.builder()
+        String dialect = req.dialect() == null ? "postgresql" : req.dialect();
+        Session candidate = Session.builder()
             .id(req.id() != null ? req.id() : java.util.UUID.randomUUID().toString())
             .name(req.name() != null ? req.name() : "Untitled").sqlText(req.sqlText() != null ? req.sqlText() : "")
-            .dialect(req.dialect() != null ? req.dialect() : "postgresql").connectionId(req.connectionId())
-            .fragmentTreeJson(tree).workspaceSnapshotJson(req.workspaceSnapshotJson()).build(), origin,
-            req.creationRequestId(), req.creationRequestId() == null ? null : creationFingerprint(req), req.workspaceProfileId());
+            .dialect(dialect).connectionId(req.connectionId()).workspaceSnapshotJson(req.workspaceSnapshotJson())
+            .identityPolicy(com.bitdata.sqlworkbench.sql.diff.StructuralSqlCodec.POLICY).build();
+        return sessionStore.createWithOrigin(candidate, origin, req.creationRequestId(),
+            req.creationRequestId() == null ? null : creationFingerprint(req,false), req.workspaceProfileId(),
+            req.identityContext() == null ? creationFingerprint(req,true) : null, () -> {
+                if (req.fragmentTreeJson() != null && req.workspaceSnapshotJson() == null)
+                    throw bad("INITIAL_TREE_REQUIRES_SNAPSHOT");
+                String tree = req.workspaceSnapshotJson() == null ? null : snapshotTree(req.workspaceSnapshotJson(),dialect);
+                validateOrigin(req,dialect);
+                return new Session(candidate.id(),candidate.name(),candidate.sqlText(),candidate.dialect(),candidate.connectionId(),
+                    tree,candidate.workspaceSnapshotJson(),candidate.createdAt(),candidate.updatedAt(),candidate.identityPolicy(),0);
+            });
+    }
+    private void validateOrigin(CreateSessionRequest req,String dialect) {
+        if (req.editOrigin() == null) return;
+        var identity = new WorkspaceIdentity(sessionStore);
+        var source = identity.require(req.identityContext(),dialect);
+        var origin = req.editOrigin();
+        if (!source.id().equals(origin.sourceSessionId())) throw new WorkspaceIdentity.Failure(409,"WORKSPACE_SESSION_MISMATCH");
+        try {
+            if (source.workspaceSnapshotJson() == null) throw new WorkspaceIdentity.Failure(409,"SAVED_SOURCE_NODE_REQUIRED");
+            snapshotTree(source.workspaceSnapshotJson(),dialect);
+            var snapshot = json.readTree(source.workspaceSnapshotJson());
+            new WorkspaceSnapshotIdentity(identity).validate(snapshot,dialect);
+            JsonNode node = null;
+            for (var candidate : snapshot.path("graph").path("nodes"))
+                if (candidate.path("id").asText().equals(origin.sourceNodeId())) node = candidate;
+            if (node == null) throw new WorkspaceIdentity.Failure(409,"SAVED_SOURCE_NODE_REQUIRED");
+            identity.verify(new NodeProof(node.path("id").asText(),node.path("sqlFragment").asText(),node.path("canonicalSql").asText()),dialect);
+            var target = com.bitdata.sqlworkbench.sql.diff.StructuralSqlCodec.canonicalize(req.sqlText(),dialect);
+            if (target.degraded() || !target.id().equals(origin.targetNodeId()))
+                throw new WorkspaceIdentity.Failure(409,"TARGET_NODE_IDENTITY_MISMATCH");
+        } catch (WorkspaceIdentity.Failure failure) { throw failure; }
+        catch (Exception failure) { throw new WorkspaceIdentity.Failure(409,"SAVED_SOURCE_INVALID"); }
     }
     // v1 is a fixed ordered tuple of effective INITIAL request fields, never live session fields.
-    private String creationFingerprint(CreateSessionRequest req) {
+    private String creationFingerprint(CreateSessionRequest req, boolean legacy) {
         var origin = req.editOrigin();
-        var fields = Arrays.asList(req.id(), req.name() == null ? "Untitled" : req.name(),
+        var fields = new ArrayList<Object>(Arrays.asList(req.id(), req.name() == null ? "Untitled" : req.name(),
             req.sqlText() == null ? "" : req.sqlText(), req.dialect() == null ? "postgresql" : req.dialect(),
             req.connectionId(), req.fragmentTreeJson(), req.workspaceSnapshotJson(), origin == null ? null :
-                Arrays.asList(origin.sourceSessionId(), origin.sourceNodeId(), origin.sourceTabName(), origin.targetNodeId()));
+                Arrays.asList(origin.sourceSessionId(), origin.sourceNodeId(), origin.sourceTabName(), origin.targetNodeId())));
+        if (!legacy) { fields.add(com.bitdata.sqlworkbench.sql.diff.StructuralSqlCodec.POLICY); fields.add(req.identityContext()); }
         try {
-            return "v1:" + HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(json.writeValueAsString(fields).getBytes(StandardCharsets.UTF_8)));
+            return (legacy ? "v1:" : "v2:") + HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(json.writeValueAsString(fields).getBytes(StandardCharsets.UTF_8)));
         } catch (Exception e) {
             log.error("Could not fingerprint session creation", e);
             throw new SessionStore.CreationFailure("CREATION_INTERNAL_ERROR", "Session creation could not be confirmed. Retry this same operation.");
@@ -115,22 +154,27 @@ public class SessionController {
         return sessionStore.updateMetadata(id, req.name()).map(ResponseEntity::ok).orElse(ResponseEntity.notFound().build());
     }
     @PutMapping("/{id}/workspace") public ResponseEntity<Session> workspace(@PathVariable String id, @RequestBody JsonNode req) {
+        IdentityContext context;
+        try { context = json.treeToValue(req.path("identityContext"),IdentityContext.class); }
+        catch (Exception invalid) { throw new WorkspaceIdentity.Failure(400,"IDENTITY_CONTEXT_INVALID"); }
+        if (context == null || !id.equals(context.sessionId())) throw new WorkspaceIdentity.Failure(400,"IDENTITY_CONTEXT_REQUIRED");
+        new WorkspaceIdentity(sessionStore).require(context,null);
         if (!req.has("sqlText") || !req.get("sqlText").isTextual() || !req.has("dialect") || !req.get("dialect").isTextual()
                 || !req.has("connectionId") || !req.has("workspaceSnapshotJson")) throw bad("Missing workspace fields");
         if (!req.get("connectionId").isNull() && !req.get("connectionId").isTextual()) throw bad("Invalid connectionId");
         JsonNode snap = req.get("workspaceSnapshotJson");
         if (!snap.isNull() && !snap.isTextual()) throw bad("Invalid workspaceSnapshotJson");
         String snapshot = snap.isNull() ? null : snap.textValue();
-        String tree = snapshot == null ? null : snapshotTree(snapshot);
-        return sessionStore.replaceWorkspace(id, req.get("sqlText").textValue(), req.get("dialect").textValue(),
-            req.get("connectionId").isNull() ? null : req.get("connectionId").textValue(), snapshot, tree)
-            .map(ResponseEntity::ok).orElse(ResponseEntity.notFound().build());
+        String tree = snapshot == null ? null : snapshotTree(snapshot,req.get("dialect").textValue());
+        return ResponseEntity.ok(sessionStore.replaceWorkspace(context, req.get("sqlText").textValue(), req.get("dialect").textValue(),
+            req.get("connectionId").isNull() ? null : req.get("connectionId").textValue(), snapshot, tree));
     }
-    private String snapshotTree(String snapshot) {
+    private String snapshotTree(String snapshot,String dialect) {
         try {
             JsonNode root = json.readTree(snapshot);
-            if (root == null || !root.path("version").isIntegralNumber() || !List.of(1,2).contains(root.path("version").asInt()) || !root.has("graph") || !root.has("treeProjection")) throw bad("Invalid snapshot version or shape");
+            if (root == null || !root.path("version").isIntegralNumber() || root.path("version").asLong()!=3 || !root.has("graph") || !root.has("treeProjection")) throw bad("Invalid snapshot version or shape");
             validateSnapshot(root);
+            new WorkspaceSnapshotIdentity(new WorkspaceIdentity(sessionStore)).validate(root,dialect);
             JsonNode tree = root.get("treeProjection");
             if (root.get("graph").isNull()) {
                 if (!tree.isNull()) throw bad("Empty graph must have empty tree");
@@ -138,7 +182,8 @@ public class SessionController {
             }
             if (!tree.isObject() || !tree.path("id").isTextual() || !tree.path("children").isArray()) throw bad("Invalid snapshot tree");
             return json.writeValueAsString(tree);
-        } catch (ResponseStatusException e) { throw e; }
+        } catch (WorkspaceIdentity.Failure e) { throw e; }
+        catch (ResponseStatusException e) { throw e; }
         catch (Exception e) { throw bad("Invalid workspace snapshot JSON"); }
     }
     private record Edge(String source, String target, String rule) {}
@@ -175,7 +220,7 @@ public class SessionController {
         for (JsonNode r : g.get("ruleResults")) {
             String source = r.path("sourceNodeId").asText(), rule = r.path("ruleName").asText();
             if (!ids.contains(source) || !r.path("ruleName").isTextual() || !r.path("childIds").isArray() || !rules.add(new RuleKey(source,rule))) throw bad("Invalid rule record");
-            if(s.path("version").asInt()==2 && !"LEGACY".equals(r.path("status").asText())) validateTransforms(r,nodeById);
+            if(s.path("version").asInt()>=2 && !"LEGACY".equals(r.path("status").asText())) validateTransforms(r,nodeById);
             for (JsonNode child : r.get("childIds")) {
                 Edge edge = new Edge(source,child.asText(),rule);
                 if (!child.isTextual() || !edges.contains(edge) || !recorded.add(edge)) throw bad("Rule record has invalid edge");

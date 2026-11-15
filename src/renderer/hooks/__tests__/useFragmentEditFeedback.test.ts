@@ -1,3 +1,4 @@
+import { currentWorkspace } from '../../test/currentWorkspace'
 import { act, renderHook } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { useFragmentEditFeedback } from '../useFragmentEditFeedback'
@@ -9,10 +10,11 @@ type Options = Parameters<typeof useFragmentEditFeedback>[0]
 const completed = { status: 'EDIT', nodeId: 'edited', sql: 'SELECT 2' } as const
 function setupOptions(): Options {
   const tree = buildMockTree()
-  const source = { sessionId: 'source', name: 'Original' }
+  const source = { sessionId: 'source', name: 'Original', workspace: { ...currentWorkspace, sessionId:'source' } }
   const tabs = {
     tabs: [source, { sessionId: 'other', name: 'Other' }], activeSessionId: 'source',
     openInNewTab: vi.fn().mockResolvedValue('target'),
+    flushWorkspaces: vi.fn().mockResolvedValue({ savedSessionIds:['source'], issues:[], workspaceRevisions:{ source:1 } }),
   } as unknown as UseTabsApi
   return { tabs, tree, nodeMap: new Map([[tree.id, tree]]), dialect: 'postgresql',
     submit: vi.fn().mockResolvedValue(completed), record: vi.fn() }
@@ -26,6 +28,33 @@ const save = (hook: { save: ReturnType<typeof useFragmentEditFeedback>['save'] }
   hook.save('node-root', 'SELECT 1', 'SELECT 2', 'Edited')
 
 describe('edit feedback stage ownership', () => {
+  it('captures source performance mode in the creation intent, including an open retry', async () => {
+    const options = setupOptions()
+    options.tabs.getMode = vi.fn().mockReturnValue('performance')
+    vi.mocked(options.tabs.openInNewTab).mockResolvedValueOnce(null).mockResolvedValueOnce('target')
+    const { result } = renderHook(() => useFragmentEditFeedback(options))
+    await act(async () => { await save(result.current) })
+    const intent = vi.mocked(options.tabs.openInNewTab).mock.calls[0][1]?.intent
+    expect(intent?.mode).toBe('performance')
+    vi.mocked(options.tabs.getMode).mockReturnValue('data')
+    await act(async () => { await result.current.retry() })
+    expect(vi.mocked(options.tabs.openInNewTab).mock.calls[1][1]?.intent).toBe(intent)
+    expect(options.submit).toHaveBeenCalledTimes(1)
+  })
+  it('preserves the completed edit when source persistence throws, and retries only persistence', async () => {
+    const options = setupOptions()
+    vi.mocked(options.tabs.flushWorkspaces!).mockResolvedValueOnce({ savedSessionIds: ['source'], issues: [], workspaceRevisions: { source: 1 } })
+      .mockRejectedValueOnce(new Error('save unavailable'))
+      .mockResolvedValueOnce({ savedSessionIds: ['source'], issues: [], workspaceRevisions: { source: 1 } })
+    const { result } = renderHook(() => useFragmentEditFeedback(options))
+    await act(async () => { expect(await save(result.current)).toBe(true) })
+    expect(result.current.feedback?.message).toMatch(/save unavailable/)
+    expect(result.current.feedback?.recovery?.stage).toBe('persist')
+    expect(options.tabs.openInNewTab).not.toHaveBeenCalled()
+    await act(async () => { await result.current.retry() })
+    expect(options.submit).toHaveBeenCalledTimes(1)
+    expect(options.tabs.openInNewTab).toHaveBeenCalledTimes(1)
+  })
   it('exposes a dismissible invalid-source error without submitting and closes the scrim', async () => {
     const options = setupOptions()
     const { result } = renderHook(() => useFragmentEditFeedback({ ...options, nodeMap: new Map() }))
@@ -79,7 +108,7 @@ describe('edit feedback stage ownership', () => {
     expect(options.submit).toHaveBeenCalledTimes(1)
     rerender(options)
     await act(async () => { await result.current.retry() })
-    expect(options.submit).toHaveBeenLastCalledWith('node-root', 'SELECT 2', 'Edited', 'postgresql')
+    expect(options.submit).toHaveBeenLastCalledWith('node-root', 'SELECT 2', 'Edited', 'postgresql', expect.objectContaining({ sessionId: 'source', workspaceRevision: 1 }))
     expect(options.submit).toHaveBeenCalledTimes(2)
   })
 
@@ -120,6 +149,7 @@ describe('edit feedback stage ownership', () => {
     let first!: Promise<boolean>
     act(() => { first = save(result.current); void save(result.current) })
     expect(result.current.pending).toBe(true)
+    await act(async () => { await Promise.resolve() })
     expect(options.submit).toHaveBeenCalledTimes(1)
     vi.mocked(options.tabs.openInNewTab).mockResolvedValueOnce(null)
     await act(async () => { request.resolve(completed); await first })
@@ -142,10 +172,15 @@ describe('edit feedback stage ownership', () => {
     const { result, rerender } = renderHook(p => useFragmentEditFeedback(p), { initialProps: options })
     let first!: Promise<boolean>
     act(() => { first = save(result.current) })
+    await act(async () => { await Promise.resolve() })
+    expect(options.submit).toHaveBeenCalledTimes(1)
     rerender({ ...options, tabs: { ...options.tabs, activeSessionId: 'other' } })
     await act(async () => { request.resolve(completed); await first })
     expect(options.tabs.openInNewTab).not.toHaveBeenCalled()
-    expect(result.current.feedback?.recovery?.stage).toBe('open')
+    expect(result.current.feedback?.recovery?.stage).toBe('persist')
+    await act(async () => { await result.current.retry() })
+    expect(options.tabs.openInNewTab).not.toHaveBeenCalled()
+    rerender(options)
     await act(async () => { await result.current.retry() })
     expect(options.submit).toHaveBeenCalledTimes(1)
     expect(options.record).toHaveBeenCalledWith(expect.objectContaining({ sourceSessionId: 'source' }))

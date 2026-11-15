@@ -66,9 +66,9 @@ class ChangeAttributionTest {
             List<NodeToken> seq = AstSerializer.serialize(
                 "SELECT 1", "postgresql");
             // 至少包含 SELECT 节点和一个 1 字面量
-            assertTrue(seq.stream().anyMatch(t -> "SELECT".equals(t.nodeType())),
+            assertTrue(seq.stream().anyMatch(t -> "OPEN_SELECT".equals(t.nodeType())),
                 "应包含 SELECT 节点: " + seq);
-            assertTrue(seq.stream().anyMatch(t -> "1".equals(t.canonicalText())),
+            assertTrue(seq.stream().anyMatch(t -> "VALUE_NUMERIC_LITERAL".equals(t.nodeType()) && "[true,\"1\"]".equals(t.canonicalText())),
                 "应包含字面量 1: " + seq);
         }
 
@@ -76,9 +76,9 @@ class ChangeAttributionTest {
         void selectWithWhere_emitsWhereAndPredicate() throws Exception {
             List<NodeToken> seq = AstSerializer.serialize(
                 "SELECT * FROM t WHERE a>0", "postgresql");
-            assertTrue(seq.stream().anyMatch(t -> "WHERE".equals(t.nodeType())),
+            assertTrue(seq.stream().anyMatch(t -> "EXPRESSION".equals(t.nodeType()) && "root/0/3".equals(t.path())),
                 "应包含 WHERE 节点: " + seq);
-            assertTrue(seq.stream().anyMatch(t -> "a>0".equals(t.canonicalText())),
+            assertTrue(seq.stream().anyMatch(t -> t.canonicalText().contains("CALL_GREATER_THAN") && t.canonicalText().contains("NUMERIC_LITERAL")),
                 "应包含谓词 a>0: " + seq);
         }
     }
@@ -217,8 +217,10 @@ class ChangeAttributionTest {
                 "单谓词值修改应恰好 1 个 MOD: " + ops);
             ChangeOp op = ops.iterator().next();
             assertEquals(ChangeOp.Kind.MOD, op.kind());
-            assertEquals("b<20", op.oldText());
-            assertEquals("b<=20", op.newText());
+            var display = StructuralSqlCodec.display(new StructuralSqlCodec.Delta(ops,false,null,"LCS"),before,after,"postgresql").get(0);
+            assertEquals("AST_NODE",display.displayScope());
+            assertEquals("b<20",display.oldSql().replaceAll("\\s+","").toLowerCase(java.util.Locale.ROOT));
+            assertEquals("b<=20",display.newSql().replaceAll("\\s+","").toLowerCase(java.util.Locale.ROOT));
         }
 
         @Test

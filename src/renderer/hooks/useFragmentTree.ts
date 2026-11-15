@@ -1,8 +1,9 @@
+import { graphRequest, LEGACY_READ_ONLY } from '../utils/workspaceIdentity'
 import { sha256 } from '../utils/sha256'
 import { apiFetch } from '../utils/api'
 import { isWorkspaceExitLocked } from '../utils/workspaceExitGate'
 import { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo } from 'react'
-import type { SessionWorkspaceState } from '../types/session'
+import type { IdentityContext, SessionWorkspaceState } from '../types/session'
 import { readSnapshot, legacyDAG } from '../utils/workspaceSnapshot'
 import {
   FragmentNode,
@@ -218,6 +219,8 @@ export function useFragmentTree(backendUrl: string | null, workspace?: SessionWo
   const workspaceKey = workspace?.sessionId ?? null
   const loadEpoch = workspace?.loadEpoch ?? 0
   const connectionId = workspace?.connectionId ?? null
+  const workspaceRef = useRef(workspace)
+  workspaceRef.current = workspace
   const connectionRef = useRef(connectionId)
   connectionRef.current = connectionId
   // Ownership must commit with the tree. StrictMode can discard render-phase
@@ -251,7 +254,10 @@ export function useFragmentTree(backendUrl: string | null, workspace?: SessionWo
     if (debounceRef.current) clearTimeout(debounceRef.current)
     // Restored tab snapshots can carry scans from a different connection too.
     setState(s => ({ ...s, optionsCache: {}, optionsLoading: {}, decomposing: {}, loading: false, warning: null }))
-  }, [workspaceKey, loadEpoch, connectionId])
+  // A successful local CAS acknowledges a save; it does not replace this DAG.
+  // Reloads replace loadEpoch, while parse/reset and context switches own epochs.
+  // Cancelling on every acknowledgement loses edits during selection autosaves.
+  }, [workspaceKey, loadEpoch, connectionId, workspace?.identityPolicy, workspace?.dialect])
   const stateRef = useRef(state)
   stateRef.current = state
   const optionsCacheRef = useRef(state.optionsCache)
@@ -294,6 +300,7 @@ export function useFragmentTree(backendUrl: string | null, workspace?: SessionWo
   const parse = useCallback(
     async (sql: string, dialect = 'postgresql', internal = false) => {
       if (isWorkspaceExitLocked() && !internal) return
+      if (workspaceRef.current?.readOnly) { setState(s => ({ ...s, error: LEGACY_READ_ONLY })); return }
       if (!backendUrl) {
         setState((s) => ({ ...s, error: 'Backend not connected', loading: false }))
         return
@@ -312,11 +319,12 @@ export function useFragmentTree(backendUrl: string | null, workspace?: SessionWo
         const res = await apiFetch(`${backendUrl}/api/sql/parse`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(request),
+          body: JSON.stringify({ ...request, ...graphRequest(workspaceRef.current) }),
           signal: controller.signal,
         })
 
         const data: ParseResult = await res.json()
+        if (!res.ok && !Array.isArray(data.errors)) throw new Error((data as unknown as { errorReason?: string }).errorReason ?? `HTTP ${res.status}`)
         if (controller.signal.aborted || requestEpoch !== requestEpochRef.current) return
 
         const rootId = data.tree?.id
@@ -362,7 +370,7 @@ export function useFragmentTree(backendUrl: string | null, workspace?: SessionWo
 
   const fetchOptions = useCallback(
     async (nodeId: string, sqlFragment: string) => {
-      if (!backendUrl) return
+      if (!backendUrl || workspaceRef.current?.readOnly) return
       // Don't re-fetch if already cached (even empty array means we checked)
       if (nodeId in optionsCacheRef.current) return
       const requestEpoch = requestEpochRef.current
@@ -377,7 +385,7 @@ export function useFragmentTree(backendUrl: string | null, workspace?: SessionWo
         const res = await apiFetch(`${backendUrl}/api/sql/decompose-options`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(request)
+          body: JSON.stringify({ ...request, ...graphRequest(workspaceRef.current, stateRef.current.dag.nodeMap.values()) })
         })
 
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -417,7 +425,7 @@ export function useFragmentTree(backendUrl: string | null, workspace?: SessionWo
 
   const decomposeNode = useCallback(
     async (nodeId: string, ruleName: string) => {
-      if (isWorkspaceExitLocked()) return
+      if (isWorkspaceExitLocked() || workspaceRef.current?.readOnly) return
       if (!backendUrl || !stateRef.current.result?.tree) {
         return
       }
@@ -448,7 +456,7 @@ export function useFragmentTree(backendUrl: string | null, workspace?: SessionWo
         const res = await apiFetch(`${backendUrl}/api/sql/decompose`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(request)
+          body: JSON.stringify({ ...request, ...graphRequest(workspaceRef.current, stateRef.current.dag.nodeMap.values()) })
         })
 
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -610,8 +618,10 @@ export function useFragmentTree(backendUrl: string | null, workspace?: SessionWo
       parentId: string,
       newSql: string,
       description: string,
-      dialect: string
+      dialect: string,
+      admittedContext?: IdentityContext
     ): Promise<UserEditOutcome> => {
+      if (workspaceRef.current?.readOnly) return { status: 'FAILED', reason: LEGACY_READ_ONLY }
       if (isWorkspaceExitLocked()) return { status: 'FAILED', reason: 'Application exit is in progress.' }
       const tree = stateRef.current.result?.tree
       if (!tree || !backendUrl) {
@@ -627,6 +637,8 @@ export function useFragmentTree(backendUrl: string | null, workspace?: SessionWo
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            ...graphRequest(workspaceRef.current, stateRef.current.dag.nodeMap.values()),
+            ...(admittedContext ? { identityContext: admittedContext } : {}),
             sql: newSql,
             parentFragmentId: parentId,
             dagContextIds,

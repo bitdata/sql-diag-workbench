@@ -1,13 +1,19 @@
 import { apiFetch } from '../utils/api'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 
 interface SessionPayload {
+  identityPolicy?: string
+  workspaceRevision?: number
+  workspaceInstanceId?: string
   sqlText: string
   fragmentTreeJson: string | null
   selectedNodeId: string | null
 }
 
 interface ActiveSessionState {
+  identityPolicy?: string
+  workspaceRevision?: number
+  workspaceInstanceId?: string
   sql: string
   fragmentTreeJson: string | null
   selectedNodeId: string | null
@@ -29,6 +35,7 @@ export function useActiveSession(
   backendUrl: string | null,
   activeSessionId: string | null
 ): ActiveSessionState {
+  const epoch = useRef(0)
   const [state, setState] = useState<ActiveSessionState>({
     sql: '',
     fragmentTreeJson: null,
@@ -39,6 +46,7 @@ export function useActiveSession(
   })
 
   const load = useCallback(async () => {
+    const requestEpoch = ++epoch.current
     if (!backendUrl || !activeSessionId) {
       setState((s) => ({
         ...s,
@@ -53,6 +61,7 @@ export function useActiveSession(
     setState((s) => ({ ...s, isLoading: true, error: null }))
     try {
       const res = await apiFetch(`${backendUrl}/api/sessions/${activeSessionId}`)
+      if (requestEpoch !== epoch.current) return
       if (res.status === 404) {
         setState((s) => ({
           ...s,
@@ -67,8 +76,9 @@ export function useActiveSession(
         fragmentTreeJson?: string | null
         selectedNodeId?: string | null
       }
+      if (requestEpoch !== epoch.current) return
       setState((s) => ({
-        ...s,
+        ...s, identityPolicy: data.identityPolicy, workspaceRevision: data.workspaceRevision, workspaceInstanceId: data.workspaceInstanceId,
         sql: data.sqlText ?? '',
         fragmentTreeJson: data.fragmentTreeJson ?? null,
         selectedNodeId: data.selectedNodeId ?? null,
@@ -76,6 +86,7 @@ export function useActiveSession(
         error: null,
       }))
     } catch (e) {
+      if (requestEpoch !== epoch.current) return
       setState((s) => ({
         ...s,
         isLoading: false,
@@ -86,6 +97,7 @@ export function useActiveSession(
 
   useEffect(() => {
     load()
+    return () => { epoch.current++ }
   }, [load])
 
   return { ...state, reload: load }

@@ -56,6 +56,10 @@ public class PlanSqlMappingService {
     public PlanSqlMapping map(String executionId, String dialect, String submittedSql,
                               ExecutionResult result, FragmentNode fragment,
                               List<DiagnosticFinding> findings) {
+        if("oracle".equals(dialect))return failed(executionId,dialect,submittedSql,List.of(),
+            List.of(new MappingIssue("ORACLE_PLAN_MAPPING_UNSUPPORTED",null,"Full Oracle operator to SQL mapping is not certified")),"ORACLE_PLAN_MAPPING_UNSUPPORTED");
+        if("sqlserver".equals(dialect))return failed(executionId,dialect,submittedSql,List.of(),
+            List.of(new MappingIssue("SQLSERVER_PLAN_MAPPING_UNSUPPORTED",null,"Full SQL Server operator to SQL mapping is not certified")),"SQLSERVER_PLAN_MAPPING_UNSUPPORTED");
         String hash = sha256(submittedSql);
         String captureKey = executionId + ":" + dialect + ":" + hash;
         List<PlanMappingEdge> edges = new ArrayList<>();

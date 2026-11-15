@@ -1,9 +1,26 @@
 import { describe, expect, it } from 'vitest'
 import raw from './fixtures/investigation-snapshot.json'
+import nativeRaw from './fixtures/investigation-sqlserver-snapshot.json'
 import { archivedMappingSource, decodeInvestigationPage, decodeInvestigationSnapshot, decodeObservationReceipt } from '../investigationProtocol'
 
 const copy = () => structuredClone(raw) as any
 describe('immutable investigation protocol', () => {
+  it('reads a real SQLServer native snapshot after connection removal', () => {
+    const snapshot = decodeInvestigationSnapshot(nativeRaw)
+    expect(snapshot.content.observation.planCapture.details?.nativeEvidence?.nodes.length).toBeGreaterThan(0)
+    expect(archivedMappingSource(snapshot)).toBeUndefined()
+  })
+  it('normalizes only nullable owner fields and rejects a different historical owner', () => {
+    const v = structuredClone(nativeRaw) as any
+    v.content.source.sessionId = null
+    v.content.source.sessionName = null
+    delete v.content.observation.sessionId
+    delete v.content.observation.sessionName
+    v.content.observation.planCapture.sessionId = null
+    expect(() => decodeInvestigationSnapshot(v)).not.toThrow()
+    v.content.observation.planCapture.sessionId = 'another-session'
+    expect(() => decodeInvestigationSnapshot(v)).toThrow('SNAPSHOT_INVALID_RESPONSE')
+  })
   it('reads a real v1 PG snapshot without refreshing expired historical evidence', () => {
     const s = decodeInvestigationSnapshot(raw, raw.content.id)
     expect(decodeObservationReceipt(s.content.observation).submittedSql).toBe(s.content.source.submittedSql)

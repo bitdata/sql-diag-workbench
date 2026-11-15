@@ -13,7 +13,7 @@
 
     <groupId>com.bitdata</groupId>
     <artifactId>sql-workbench-backend</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.3.0</version>
     <packaging>jar</packaging>
     <name>SQL Diagnostic Workbench Backend</name>
 

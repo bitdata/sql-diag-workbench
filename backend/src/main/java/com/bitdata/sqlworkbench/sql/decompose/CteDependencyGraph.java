@@ -23,6 +23,9 @@ public class CteDependencyGraph {
 
     private static final Logger log = LoggerFactory.getLogger(CteDependencyGraph.class);
 
+    private String dialect="postgresql";
+    public static String nameKey(SqlIdentifier id,String dialect) { return "oracle".equalsIgnoreCase(dialect)?id.names.get(0):id.toString().toUpperCase(); }
+    private String lookupKey(String key) { return "oracle".equalsIgnoreCase(dialect)?key:key.toUpperCase(); }
     private final Map<String, CteInfo> cteByName;
     private final Map<String, Set<String>> directDeps;
     private final Set<String> selfReferences;
@@ -41,6 +44,15 @@ public class CteDependencyGraph {
 
     /** Build a CteDependencyGraph from a SqlWith node. */
     public static CteDependencyGraph build(SqlWith withNode, String dialect) {
+        if("oracle".equalsIgnoreCase(dialect)) {
+            Set<String> declared=new HashSet<>();
+            for(SqlNode entry:withNode.withList) {
+                SqlWithItem item=(SqlWithItem)entry;
+                if(!declared.add(nameKey(item.name,dialect)))throw new com.bitdata.sqlworkbench.sql.SqlSerializationException("ORACLE_CTE_DUPLICATE_NAME_UNSUPPORTED");
+                rejectNestedWith(item.query);
+            }
+            rejectNestedWith(withNode.body);
+        }
         Map<String, CteInfo> cteByName = new LinkedHashMap<>();
         Map<String, Set<String>> directDeps = new LinkedHashMap<>();
         Set<String> selfReferences=new LinkedHashSet<>();
@@ -48,7 +60,7 @@ public class CteDependencyGraph {
         if (withNode.withList != null) {
             for (SqlNode item : withNode.withList) {
                 if (item instanceof SqlWithItem withItem) {
-                    String name = withItem.name.toString().toUpperCase();
+                    String name = nameKey(withItem.name,dialect);
                     CteInfo info = new CteInfo(name, withItem.query, withItem);
                     cteByName.put(name, info);
                     directDeps.put(name, new LinkedHashSet<>());
@@ -60,7 +72,7 @@ public class CteDependencyGraph {
         for (Map.Entry<String, CteInfo> entry : cteByName.entrySet()) {
             String cteName = entry.getKey();
             SqlNode query = entry.getValue().definition();
-            Set<String> refs = collectCteRefs(query, cteByName.keySet());
+            Set<String> refs = collectCteRefs(query, cteByName.keySet(),dialect);
             // Keep recursive facts separately: self is not "referenced by others",
             // but extracting this body without its defining WITH would be unsafe.
             if(refs.contains(cteName))selfReferences.add(cteName);
@@ -68,12 +80,18 @@ public class CteDependencyGraph {
             directDeps.get(cteName).addAll(refs);
         }
 
-        return new CteDependencyGraph(cteByName, directDeps,selfReferences);
+        var graph=new CteDependencyGraph(cteByName, directDeps,selfReferences); graph.dialect=dialect;return graph;
+    }
+
+    private static void rejectNestedWith(SqlNode node) {
+        if(node instanceof SqlWith)throw new com.bitdata.sqlworkbench.sql.SqlSerializationException("ORACLE_CTE_NESTED_SCOPE_UNSUPPORTED");
+        if(node instanceof SqlNodeList list)for(SqlNode item:list)rejectNestedWith(item);
+        else if(node instanceof SqlCall call)for(SqlNode operand:call.getOperandList())if(operand!=null)rejectNestedWith(operand);
     }
 
     /** True for self-recursion or a transitive dependency on any recursive group. */
     public boolean requiresRecursiveClosure(String name) {
-        String key=name.toUpperCase(Locale.ROOT);
+        String key=lookupKey(name);
         Set<String> closure=new LinkedHashSet<>(transitiveDependencies(key));closure.add(key);
         for(String dep:closure)if(selfReferences.contains(dep)||transitiveDependencies(dep).contains(dep))return true;
         return false;
@@ -93,7 +111,7 @@ public class CteDependencyGraph {
         Set<String> visited = new HashSet<>();
         Queue<String> queue = new LinkedList<>();
 
-        String upper = cteName.toUpperCase();
+        String upper = lookupKey(cteName);
         Set<String> direct = directDeps.getOrDefault(upper, Set.of());
         queue.addAll(direct);
 
@@ -122,7 +140,7 @@ public class CteDependencyGraph {
         // Collect all needed CTEs (required + their transitive deps)
         Set<String> needed = new LinkedHashSet<>();
         for (String name : requiredCteNames) {
-            String upper = name.toUpperCase();
+            String upper = lookupKey(name);
             needed.add(upper);
             needed.addAll(transitiveDependencies(upper));
         }
@@ -305,9 +323,12 @@ public class CteDependencyGraph {
      * and finding SqlIdentifier nodes used as table references in FROM/JOIN.
      */
     public static Set<String> collectCteRefs(SqlNode node, Set<String> cteNames) {
+        return collectCteRefs(node,cteNames,"postgresql");
+    }
+    public static Set<String> collectCteRefs(SqlNode node,Set<String> cteNames,String dialect) {
         Set<String> refs = new LinkedHashSet<>();
         if (cteNames.isEmpty() || node == null) return refs;
-        collectCteRefsImpl(node, cteNames, refs, false);
+        collectCteRefsImpl(node, cteNames, refs, false,dialect);
         return refs;
     }
 
@@ -327,35 +348,35 @@ public class CteDependencyGraph {
      * nested refs → invalid standalone fragments, the P1-9a regression).
      */
     private static void collectCteRefsImpl(SqlNode node, Set<String> cteNames,
-                                           Set<String> refs, boolean inTableContext) {
+                                           Set<String> refs, boolean inTableContext,String dialect) {
         if (node == null) return;
 
         if (node instanceof SqlSelect select) {
             // A query's own FROM is a table context regardless of where the
             // query itself sits — a subquery in a column position still has
             // real tables in its FROM. The surrounding flag does not apply.
-            collectCteRefsImpl(select.getFrom(), cteNames, refs, true);
+            collectCteRefsImpl(select.getFrom(), cteNames, refs, true,dialect);
             // WHERE / HAVING / select-list are column-expression contexts:
             // descend (subqueries inside carry their own FROM context) but
             // bare identifiers there are not table references.
-            collectCteRefsImpl(select.getWhere(), cteNames, refs, false);
-            collectCteRefsImpl(select.getHaving(), cteNames, refs, false);
-            collectCteRefsImpl(select.getSelectList(), cteNames, refs, false);
+            collectCteRefsImpl(select.getWhere(), cteNames, refs, false,dialect);
+            collectCteRefsImpl(select.getHaving(), cteNames, refs, false,dialect);
+            collectCteRefsImpl(select.getSelectList(), cteNames, refs, false,dialect);
             return;
         }
 
         if (node instanceof SqlJoin join) {
-            collectCteRefsImpl(join.getLeft(), cteNames, refs, true);
-            collectCteRefsImpl(join.getRight(), cteNames, refs, true);
+            collectCteRefsImpl(join.getLeft(), cteNames, refs, true,dialect);
+            collectCteRefsImpl(join.getRight(), cteNames, refs, true,dialect);
             // join condition is a boolean expression, not a table context;
             // subqueries inside it reset their own FROM when reached.
-            collectCteRefsImpl(join.getCondition(), cteNames, refs, false);
+            collectCteRefsImpl(join.getCondition(), cteNames, refs, false,dialect);
             return;
         }
 
         if (node instanceof SqlIdentifier id) {
-            if (inTableContext) {
-                String name = id.toString().toUpperCase();
+            if (inTableContext && (!"oracle".equalsIgnoreCase(dialect)||id.names.size()==1)) {
+                String name = nameKey(id,dialect);
                 if (cteNames.contains(name)) {
                     refs.add(name);
                 }
@@ -365,7 +386,7 @@ public class CteDependencyGraph {
 
         if (node instanceof SqlNodeList list) {
             for (SqlNode item : list) {
-                collectCteRefsImpl(item, cteNames, refs, inTableContext);
+                collectCteRefsImpl(item, cteNames, refs, inTableContext,dialect);
             }
             return;
         }
@@ -380,7 +401,7 @@ public class CteDependencyGraph {
             List<SqlNode> operands = call.getOperandList();
             for (int i = 0; i < operands.size(); i++) {
                 boolean childCtx = isAs ? (i == 0 && inTableContext) : false;
-                collectCteRefsImpl(operands.get(i), cteNames, refs, childCtx);
+                collectCteRefsImpl(operands.get(i), cteNames, refs, childCtx,dialect);
             }
             return;
         }
@@ -389,7 +410,7 @@ public class CteDependencyGraph {
         // with a non-table context so nested subqueries are still walked.
         if (node instanceof SqlCall call) {
             for (SqlNode operand : call.getOperandList()) {
-                collectCteRefsImpl(operand, cteNames, refs, false);
+                collectCteRefsImpl(operand, cteNames, refs, false,dialect);
             }
         }
     }

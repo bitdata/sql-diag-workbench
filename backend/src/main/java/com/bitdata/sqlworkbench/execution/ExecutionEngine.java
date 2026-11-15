@@ -44,6 +44,126 @@ public class ExecutionEngine {
     private final ThreadPoolExecutor executor;
     private final Map<String, ExecutionContext> executions = new ConcurrentHashMap<>();
     private final Object admissionLock = new Object();
+    private volatile boolean stopping;
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    private PlanCapabilityService planCapabilityService;
+    private final OracleNetworkTimeoutExecutor networkTimeouts = new OracleNetworkTimeoutExecutor(2, 8);
+    private final ThreadPoolExecutor exitCancellation=new ThreadPoolExecutor(2,2,0,TimeUnit.SECONDS,new ArrayBlockingQueue<>(8),r->{var t=new Thread(r,"execution-shutdown-cancel");t.setDaemon(true);return t;},new ThreadPoolExecutor.AbortPolicy());
+    private final ThreadPoolExecutor ordinaryCancellation = new ThreadPoolExecutor(2,2,0,TimeUnit.SECONDS,
+        new ArrayBlockingQueue<>(8),r->{var t=new Thread(r,"oracle-statement-cancel");t.setDaemon(true);return t;},new ThreadPoolExecutor.AbortPolicy());
+
+    /** Internal lifecycle projection for ordinary Oracle execution. */
+    public Map<String,Object> ordinaryLifecycle(String id) {
+        var ctx=executions.get(id);if(ctx==null)return Map.of("available",false);
+        synchronized(ctx){reconcileOrdinary(ctx);return Map.of("available",true,"oracleSnapshot",ctx.ordinaryOracle,"cancelSignal",ctx.ordinarySignal,
+            "cleanup",ctx.ordinaryCleanup,"workerFinished",ctx.workerFinished,"cancelWorkers",ctx.cancelWorkers,
+            "started",ctx.ordinaryStarted,"ownerRevision",ctx.ordinaryRevision==null?"NONE":ctx.ordinaryRevision);}
+    }
+    /** Versioned HTTP lifecycle projection. Revision advances on changes observed by this endpoint, not on every internal event. */
+    public Object ordinaryResponse(String id) {
+        var ctx=executions.get(id);if(ctx==null)return null;
+        if(!ctx.ordinaryOracle) {
+            reconcileNativeNetwork(ctx);
+            var result=getStatus(id);if(!ctx.nativePlan)return result;
+            synchronized(ctx) {
+                java.util.Map<String,Object> resources=ctx.nativeTicket==null?java.util.Map.of("references",0,"entryReleased",true,"unconfirmed",false,"reasons",java.util.List.of()):ctx.nativeTicket.resourceSnapshot();
+                boolean settled=result.status().isTerminal()&&nativeOwnersSettled(ctx);
+                String reason=ctx.networkReason.get()!=null?ctx.networkReason.get():ctx.cleanupReason;
+                if(reason==null&&"FAILED".equals(ctx.nativeSignal))reason="CANCEL_SIGNAL_FAILED";
+                if(reason==null&&"REJECTED".equals(ctx.nativeSignal))reason="CANCEL_SIGNAL_UNAVAILABLE";
+                String cleanup=settled?(ctx.nativeTicket==null?"NO_RESOURCES":"CLOSED"):reason!=null&&!java.util.Set.of("CLEANUP_PENDING","CANCEL_SIGNAL_PENDING").contains(reason)?"UNCONFIRMED":"PENDING";
+                var signature=new java.util.ArrayList<Object>();signature.add(result.status());signature.add(ctx.nativeSignal);signature.add(cleanup);signature.add(settled);signature.add(reason);signature.add(resources);
+                if(!signature.equals(ctx.nativeObservedSignature)){ctx.nativeObservedSignature=signature;ctx.nativeObservedRevision++;}
+                var observation=new com.bitdata.sqlworkbench.diagnostics.trace.TraceLifecycle(1,ctx.nativeObservedRevision,settled,ctx.nativeSignal,cleanup,reason,!settled,resources,"UNKNOWN","UNCONFIRMED");
+                var mapper=new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules();
+                var body=mapper.convertValue(result,new com.fasterxml.jackson.core.type.TypeReference<java.util.LinkedHashMap<String,Object>>(){});body.put("lifecycle",observation);return body;
+            }
+        }
+        synchronized(ctx) {
+            var result=getStatus(id);var lc=ordinaryLifecycle(id);
+            String signal=(String)lc.get("cancelSignal"),clean=(String)lc.get("cleanup");
+            boolean settled=result.status().isTerminal()&&ctx.workerFinished&&ctx.cancelWorkers==0 && pendingNetworkCallbacks(ctx)==0
+                &&("CLOSED".equals(clean)||"NO_RESOURCES".equals(clean));
+            String reason=result.errorReason();
+            String signature=result.status()+":"+signal+":"+clean+":"+settled+":"+reason;
+            if(!signature.equals(ctx.ordinaryObservedSignature)){ctx.ordinaryObservedSignature=signature;ctx.ordinaryObservedRevision++;}
+            var observation=new java.util.LinkedHashMap<String,Object>();
+            observation.put("version",1);observation.put("revision",ctx.ordinaryObservedRevision);
+            observation.put("settled",settled);observation.put("cancelSignal",signal);observation.put("cleanup",clean);observation.put("errorReason",reason);
+            var mapper=new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules();
+            var body=mapper.convertValue(result,new com.fasterxml.jackson.core.type.TypeReference<java.util.LinkedHashMap<String,Object>>(){});
+            body.put("lifecycle",observation);return body;
+        }
+    }
+    private boolean cancelOrdinaryOracle(ExecutionContext ctx,String reason) {
+        Statement statement;
+        com.bitdata.sqlworkbench.connection.WorkloadLeaseManager.Ticket signalTicket;
+        synchronized(ctx) {
+            if(ctx.published.status()!=null&&ctx.published.status().isTerminal())return false;
+            ctx.cancelled=true;
+            if(!ctx.publish(ExecutionStatus.CANCELLED,errorResult(ctx.executionId,ExecutionStatus.CANCELLED,reason)))return false;
+            statement=ctx.statement;
+            if(ctx.future!=null)ctx.future.cancel(false);
+            if(!ctx.ordinaryStarted){ctx.workerFinished=true;ctx.ordinaryCleanup="NO_RESOURCES";}
+            if(statement==null){ctx.ordinarySignal="NOT_REQUIRED";return true;}
+            signalTicket=ctx.ordinaryWorkerTicket.retain();
+            ctx.ordinarySignal="PENDING";ctx.cancelWorkers++;
+        }
+        try {ordinaryCancellation.execute(()->{
+            try{statement.cancel();ctx.ordinarySignal="SENT";}
+            catch(Exception failure){ctx.ordinarySignal="FAILED";ctx.ordinaryReason="CANCEL_SIGNAL_FAILED";}
+            finally{signalTicket.release();synchronized(ctx){ctx.cancelWorkers--;}}
+        });} catch(RejectedExecutionException failure) {
+            signalTicket.release();synchronized(ctx){ctx.cancelWorkers--;ctx.ordinarySignal="REJECTED";ctx.ordinaryReason="CANCEL_SIGNAL_REJECTED";}
+        }
+        return true;
+    }
+    private static int pendingNetworkCallbacks(ExecutionContext ctx) {
+        return ctx.networkRegistration == null ? 0 : ctx.networkRegistration.pendingCallbacks();
+    }
+    private void reconcileOrdinary(ExecutionContext ctx) {
+        var ticket=ctx.ordinaryConnectionTicket;
+        if (ctx.ordinaryOracle && ticket != null && ticket.isReleased() && !ticket.isUnconfirmed()) {
+            ctx.exitConnectionClosed=true;
+            if(ctx.networkRegistration!=null)ctx.networkRegistration.connectionCloseConfirmed();
+        }
+        if(ctx.ordinaryOracle&&ctx.workerFinished&&!ctx.ordinaryStatementCloseFailed&&ticket!=null&&ticket.isReleased()&&!ticket.isUnconfirmed()
+            &&"UNCONFIRMED".equals(ctx.ordinaryCleanup)) {
+            ctx.ordinaryCleanup="CLOSED";ctx.exitConnectionClosed=true;
+            if(ctx.networkRegistration!=null)ctx.networkRegistration.connectionCloseConfirmed();
+            if("RESOURCE_CLEANUP_UNCONFIRMED".equals(ctx.ordinaryReason))ctx.ordinaryReason=null;
+        }
+    }
+    private Connection trackOrdinary(Connection connection,ExecutionContext ctx) {
+        ctx.exitConnectionOpened=true;
+        return (Connection)java.lang.reflect.Proxy.newProxyInstance(Connection.class.getClassLoader(),new Class<?>[]{Connection.class},(proxy,method,args)->{
+            try{
+                Object value=method.invoke(connection,args);
+                if(method.getName().equals("close")) {
+                    ctx.exitConnectionClosed=true;
+                    if(ctx.networkRegistration!=null)ctx.networkRegistration.connectionCloseConfirmed();
+                }
+                if(method.getName().equals("createStatement")&&value instanceof Statement statement)
+                    return java.lang.reflect.Proxy.newProxyInstance(Statement.class.getClassLoader(),new Class<?>[]{Statement.class},(sp,sm,sa)->{
+                        try{return sm.invoke(statement,sa);}catch(java.lang.reflect.InvocationTargetException error){
+                            if(sm.getName().equals("close")){ctx.ordinaryStatementCloseFailed=true;ctx.ordinaryCleanup="UNCONFIRMED";ctx.ordinaryReason="RESOURCE_CLEANUP_UNCONFIRMED";}
+                            throw error.getCause();
+                        }
+                    });
+                return value;
+            }catch(java.lang.reflect.InvocationTargetException error){
+                if(method.getName().equals("close")){ctx.ordinaryCleanup="UNCONFIRMED";ctx.ordinaryReason="RESOURCE_CLEANUP_UNCONFIRMED";}
+                throw error.getCause();
+            }
+        });
+    }
+    private Connection openOrdinary(ExecutionContext ctx)throws SQLException {
+        if(!ctx.ordinaryOracle)return trackOrdinary(connectionService.openJdbcConnection(ctx.connectionId),ctx);
+        if(ctx.cancelled)throw new SQLException("CANCELLED_BEFORE_CONNECT");
+        ctx.ordinaryWorkerTicket=connectionService.acquireOrdinaryWorkload();
+        ctx.ordinaryConnectionTicket=ctx.ordinaryWorkerTicket.retain();
+        return trackOrdinary(connectionService.openOrdinaryConnection(ctx.connectionId,ctx.ordinaryRevision,ctx.ordinaryConnectionTicket),ctx);
+    }
     private final java.util.function.LongSupplier ticker;
     private static final long RETENTION_NANOS = TimeUnit.MINUTES.toNanos(5);
     private static final int CAPACITY = 256;
@@ -87,6 +207,21 @@ public class ExecutionEngine {
         );
         cleanup.scheduleAtFixedRate(this::removeExpired, 1, 1, TimeUnit.MINUTES);
     }
+
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    private com.bitdata.sqlworkbench.session.SessionStore sessionStore;
+    private final ScheduledExecutorService planDeadlines = Executors.newSingleThreadScheduledExecutor(r -> {
+        var t=new Thread(r,"native-plan-deadline");t.setDaemon(true);return t;
+    });
+    private final ThreadPoolExecutor planCancellation = new ThreadPoolExecutor(4,4,0,TimeUnit.SECONDS,
+        new ArrayBlockingQueue<>(32),r->{var t=new Thread(r,"native-plan-cancel");t.setDaemon(true);return t;},new ThreadPoolExecutor.AbortPolicy());
+    private final ThreadPoolExecutor planCleanup = new ThreadPoolExecutor(4,4,0,TimeUnit.SECONDS,
+        new ArrayBlockingQueue<>(32),r->{var t=new Thread(r,"native-plan-cleanup");t.setDaemon(true);return t;},new ThreadPoolExecutor.AbortPolicy());
+    private final ThreadPoolExecutor planMetadata = new ThreadPoolExecutor(4,4,0,TimeUnit.SECONDS,
+        new ArrayBlockingQueue<>(16),r->{var t=new Thread(r,"native-plan-metadata");t.setDaemon(true);return t;},new ThreadPoolExecutor.AbortPolicy());
+    // Package-internal test injection exercises the same timers without waiting two minutes.
+    private long nativeBudgetMillis=120_000;
+    private long metadataBudgetMillis=5_000;
 
     // ─── Public API ────────────────────────────────────────────────────────
     //
@@ -160,6 +295,11 @@ public class ExecutionEngine {
             return false;
         }
 
+        if(ctx.ordinaryOracle)return cancelOrdinaryOracle(ctx,"CANCELLED_BY_USER");
+        if(ctx.nativePlan) {
+            if(ownerError(ctx)!=null) return false;
+            return terminateNative(ctx,ExecutionStatus.CANCELLED,"CANCELLED_BY_USER");
+        }
         ctx.cancelled = true;
         if (ctx.statement != null) {
             try {
@@ -184,16 +324,43 @@ public class ExecutionEngine {
         ExecutionContext ctx = executions.get(executionId);
         if (ctx == null) return null;
 
+        if(ctx.nativePlan && ctx.ownerAdmitted && ownerError(ctx)!=null) {
+            terminateNative(ctx,ExecutionStatus.FAILED,"PLAN_OWNER_CHANGED");
+            return errorResult(ctx.executionId,ExecutionStatus.FAILED,"Plan owner changed").withCapture(ctx.capture).withFailureReason("PLAN_OWNER_CHANGED");
+        }
         // Read the snapshot ONCE into a local. Two reads of `published` could
         // straddle a publish and pair a stale status with a fresh result —
         // that is exactly the gap this fix closes.
         Published p = ctx.published;
-        if (p.result() != null) return p.result();
+        if (p.result() != null) {
+            if(ctx.ordinaryOracle) {
+                reconcileOrdinary(ctx);
+                String reason=ctx.networkReason.get();
+                if(reason==null)reason=ctx.ordinaryReason;
+                if(reason==null&&pendingNetworkCallbacks(ctx)>0)reason="NETWORK_TIMEOUT_CALLBACK_PENDING";
+                if(reason==null&&ctx.cancelWorkers>0)reason="CANCEL_SIGNAL_PENDING";
+                if(reason==null&&!ctx.workerFinished&&p.status().isTerminal())reason="RESOURCE_CLEANUP_PENDING";
+                return reason==null?p.result():p.result().withFailureReason(reason);
+            }
+            if(ctx.nativePlan && ctx.cleanupReason!=null && p.result().planCapture()!=null) {
+                var capture=p.result().planCapture();var issues=new ArrayList<>(capture.issues());
+                issues.add(new PlanCapture.Issue(ctx.cleanupReason,null,"Resource cleanup or cancellation status; not proof of physical server stop"));
+                return p.result().withCapture(new PlanCapture(capture.version(),capture.requestedMode(),capture.attemptedMode(),capture.submittedSql(),capture.explainSql(),capture.connectionId(),capture.sessionId(),capture.dialect(),capture.serverProduct(),capture.serverVersion(),capture.capturedAt(),capture.capabilities(),capture.parseStatus(),issues,capture.details()));
+            }
+            return p.result();
+        }
 
+        // Capture assembly precedes receipt persistence and terminal publication.
+        // A pending response must not pair the completed evidence with a null tree.
+        PlanCapture pendingCapture=ctx.capture;
+        if(pendingCapture!=null&&!p.status().isTerminal()&&pendingCapture.details()!=null)
+            pendingCapture=new PlanCapture(pendingCapture.version(),pendingCapture.requestedMode(),pendingCapture.attemptedMode(),
+                pendingCapture.submittedSql(),pendingCapture.explainSql(),pendingCapture.connectionId(),pendingCapture.sessionId(),
+                pendingCapture.dialect(),pendingCapture.serverProduct(),pendingCapture.serverVersion(),null,pendingCapture.capabilities(),"NOT_STARTED",List.of());
         return new ExecutionResult(
             executionId, p.status(),
             null, null, 0, null, null, null, null
-        ).withCapture(ctx.capture);
+        ).withCapture(pendingCapture);
     }
 
     public record PlanObservation(String sourceState,String errorReason,ExecutionResult result) {}
@@ -206,6 +373,7 @@ public class ExecutionEngine {
                 return new PlanObservation("EXPIRED","PLAN_SOURCE_EXPIRED",null);
             if(ctx.kind!=Kind.ANALYZE || !Objects.equals(ctx.sql,sql) || !Objects.equals(ctx.connectionId,connectionId) || !Objects.equals(ctx.sessionId,sessionId))
                 return new PlanObservation("MISMATCH","PLAN_SOURCE_MISMATCH",null);
+            if(ctx.nativePlan && ownerError(ctx)!=null)return new PlanObservation("MISMATCH","PLAN_OWNER_CHANGED",null);
             var p=ctx.published;
             if(p.status()!=ExecutionStatus.COMPLETED || p.result()==null || p.result().plan()==null)
                 return new PlanObservation("UNAVAILABLE","PLAN_SOURCE_UNAVAILABLE",null);
@@ -248,6 +416,26 @@ public class ExecutionEngine {
         ctx.observationReceiptStore = observationReceiptStore;
         ctx.ticker = ticker;
         ctx.sessionId=sessionId;
+        if(kind==Kind.EXECUTE) {
+            var submittedOwner=connectionService.getById(connectionId).orElse(null);
+            if(submittedOwner!=null&&"oracle".equalsIgnoreCase(submittedOwner.dialect())) {
+                ctx.ordinaryOracle=true;ctx.ordinaryDialect=submittedOwner.dialect();
+                ctx.ordinaryRevision=com.bitdata.sqlworkbench.connection.ConnectionIdentity.revision(submittedOwner);
+            }
+        }
+        if(kind==Kind.ANALYZE) {
+            var configuration=connectionService.getById(connectionId);
+            if(configuration.isPresent() && Set.of("sqlserver","oracle").contains(configuration.get().dialect())) {
+                ctx.nativePlan=true;
+                ctx.owner=configuration.get();
+                ctx.ownerRevision=com.bitdata.sqlworkbench.connection.ConnectionIdentity.revision(ctx.owner);
+                ctx.deadlineNanos=System.nanoTime()+TimeUnit.MILLISECONDS.toNanos(nativeBudgetMillis);
+                if(sessionId!=null) {
+                    var session=sessionStore==null?null:sessionStore.findById(sessionId).orElse(null);
+                    ctx.sessionInstance=session==null?null:session.workspaceInstanceId();
+                }
+            }
+        }
         if(kind==Kind.ANALYZE) ctx.capture=new PlanCapture(1,analyzeMode,null,sql,null,connectionId,sessionId,"unknown",null,null,null,null,"NOT_STARTED",List.of());
 
         ctx.effectiveTimeoutSeconds = (queryTimeoutSeconds != null && queryTimeoutSeconds > 0)
@@ -259,25 +447,43 @@ public class ExecutionEngine {
 
         ctx.publish(ExecutionStatus.QUEUED, null);
         synchronized (admissionLock) {
+            if(stopping)throw new IllegalStateException("APPLICATION_SHUTDOWN");
             removeExpired();
             if (executions.size() >= CAPACITY) throw new ExecutionCapacityException();
             executions.put(executionId, ctx);
+        if(ctx.nativePlan) {
+            String ownerFailure=ownerError(ctx);
+            if(ownerFailure!=null) {
+                ctx.exitFinished=true;
+                ctx.publish(ExecutionStatus.FAILED,errorResult(executionId,ExecutionStatus.FAILED,ownerFailure).withFailureReason(ownerFailure));
+                return executionId;
+            }
+            ctx.ownerAdmitted=true;
+            ctx.deadlineTask=planDeadlines.schedule(()->terminateNative(ctx,ExecutionStatus.TIMED_OUT,"PLAN_TOTAL_BUDGET_EXCEEDED"),nativeBudgetMillis,TimeUnit.MILLISECONDS);
         }
-
         try {
             Future<?> future = executor.submit(() -> run(ctx));
-            ctx.future = future;
+            synchronized(ctx){ctx.future = future;
+                if(ctx.ordinaryOracle&&ctx.cancelled)future.cancel(false);
+            }
         } catch (RejectedExecutionException e) {
+            ctx.exitFinished=true;ctx.workerFinished=true;ctx.ordinaryCleanup="NO_RESOURCES";
             ctx.publish(ExecutionStatus.FAILED, errorResult(executionId,
                 ExecutionStatus.FAILED,
                 "Execution pool exhausted. Please wait for running queries to complete."));
         }
 
         return executionId;
+        }
     }
 
     private void run(ExecutionContext ctx) {
         try {
+            synchronized(ctx) {
+                if(ctx.cancelled)return;
+                ctx.exitStarted=true;
+                if(ctx.ordinaryOracle){ctx.ordinaryStarted=true;ctx.ordinaryCleanup="PENDING";}
+            }
             if (ctx.kind == Kind.EXECUTE) {
                 runSelect(ctx);
             } else {
@@ -300,7 +506,17 @@ public class ExecutionEngine {
             log.error("Execution {} failed outside the run try-block: {}",
                 ctx.executionId, t.getMessage(), t);
         } finally {
+            synchronized(ctx){ctx.exitFinished=true;}
             ctx.statement = null;
+            if(ctx.ordinaryOracle)synchronized(ctx){
+                ctx.workerFinished=true;
+                if(ctx.ordinaryWorkerTicket!=null)ctx.ordinaryWorkerTicket.release();
+                if(ctx.ordinaryConnectionTicket!=null&&ctx.ordinaryConnectionTicket.isUnconfirmed()) {
+                    ctx.ordinaryCleanup="UNCONFIRMED";ctx.ordinaryReason="RESOURCE_CLEANUP_UNCONFIRMED";
+                } else if(!"UNCONFIRMED".equals(ctx.ordinaryCleanup))ctx.ordinaryCleanup="CLOSED";
+                reconcileOrdinary(ctx);
+            }
+            if(ctx.deadlineTask!=null)ctx.deadlineTask.cancel(false);
         }
     }
 
@@ -309,20 +525,80 @@ public class ExecutionEngine {
         return published.status() != null && published.status().isTerminal();
     }
 
+    /** Native plans: terminal status and reference-local release do not settle shared owners. */
+    private static boolean nativeOwnersSettled(ExecutionContext ctx) {
+        return ctx.exitFinished && ctx.cancelWorkers==0 && ctx.exitCancelWorkers==0 && pendingNetworkCallbacks(ctx)==0
+            && (ctx.nativeTicket==null || Boolean.TRUE.equals(ctx.nativeTicket.resourceSnapshot().get("entryReleased")));
+    }
+
     void removeExpired() {
         synchronized (admissionLock) {
             long now = ticker.getAsLong();
             executions.entrySet().removeIf(entry -> {
                 ExecutionContext ctx = entry.getValue();
                 synchronized (ctx) {
-                    return isReclaimable(ctx.published) && ctx.hasTerminalTime && now - ctx.terminalAt >= RETENTION_NANOS;
+                    reconcileOrdinary(ctx);
+                    return (!ctx.ordinaryOracle || (ctx.workerFinished && ctx.cancelWorkers==0 && pendingNetworkCallbacks(ctx)==0 && !"UNCONFIRMED".equals(ctx.ordinaryCleanup))) && (!ctx.nativePlan || nativeOwnersSettled(ctx)) && isReclaimable(ctx.published) && ctx.hasTerminalTime && now - ctx.terminalAt >= RETENTION_NANOS;
                 }
             });
         }
     }
 
     @jakarta.annotation.PreDestroy
-    public void shutdown() { cleanup.shutdownNow(); executor.shutdownNow(); }
+    public synchronized void beginShutdown() {
+        synchronized(admissionLock){if(stopping)return;stopping=true;}
+        cleanup.shutdownNow();planDeadlines.shutdownNow();networkTimeouts.beginShutdown();
+        if(planCapabilityService!=null)planCapabilityService.beginShutdown();
+        // Cancel every queued task before interrupting running work can free a worker.
+        for(var ctx:executions.values())synchronized(ctx){
+            if(!ctx.exitStarted){ctx.cancelled=true;ctx.exitFinished=true;if(ctx.future!=null)ctx.future.cancel(false);}
+        }
+        for(var ctx:executions.values()) synchronized(ctx) {
+            if(!ctx.exitStarted)ctx.exitFinished=true;
+            if(ctx.ordinaryOracle)cancelOrdinaryOracle(ctx,"APPLICATION_SHUTDOWN");
+            else if(ctx.nativePlan) {
+                terminateNative(ctx,ExecutionStatus.CANCELLED,"APPLICATION_SHUTDOWN");
+                if(!ctx.exitStarted)ctx.cleanupReason=null;
+                if(ctx.future!=null)ctx.future.cancel(false);
+            } else {
+                if(ctx.published.status().isTerminal())continue;
+                ctx.cancelled=true;ctx.publish(ExecutionStatus.CANCELLED,errorResult(ctx.executionId,ExecutionStatus.CANCELLED,"APPLICATION_SHUTDOWN"));
+                Statement statement=ctx.statement;if(ctx.future!=null)ctx.future.cancel(true);
+                if(statement!=null) {
+                    ctx.exitCancelWorkers++;
+                    try{exitCancellation.execute(()->{
+                        try{statement.cancel();}catch(Exception failure){ctx.exitReason="CANCEL_SIGNAL_FAILED";}
+                        finally{synchronized(ctx){ctx.exitCancelWorkers--;}}
+                    });}catch(RejectedExecutionException failure){ctx.exitCancelWorkers--;ctx.exitReason="CANCEL_SIGNAL_REJECTED";}
+                }
+            }
+        }
+        executor.shutdown();ordinaryCancellation.shutdown();exitCancellation.shutdown();
+        planCancellation.shutdown();planCleanup.shutdown();planMetadata.shutdown();
+    }
+    /** Nonblocking, local snapshot. Caller owns its absolute wait budget. */
+    public Map<String,Object> shutdownSnapshot() {
+        var rows=new ArrayList<Object>();boolean drained=true,issues=false;
+        for(var ctx:executions.values())synchronized(ctx){
+            reconcileOrdinary(ctx);
+            boolean pending=!ctx.exitFinished||ctx.exitCancelWorkers>0||ctx.cancelWorkers>0||pendingNetworkCallbacks(ctx)>0;
+            boolean unconfirmed="UNCONFIRMED".equals(ctx.ordinaryCleanup)||ctx.ordinaryStatementCloseFailed
+                ||ctx.exitConnectionOpened&&!ctx.exitConnectionClosed
+                ||ctx.nativeTicket!=null&&ctx.nativeTicket.isUnconfirmed()
+                ||ctx.nativePlan&&!nativeOwnersSettled(ctx);
+            boolean confirmed=ctx.published.status().isTerminal()&&!pending&&!unconfirmed;
+            drained&=confirmed;String reason=ctx.networkReason.get()!=null?ctx.networkReason.get():ctx.exitReason!=null?ctx.exitReason:ctx.ordinaryReason;
+            issues|=reason!=null;
+            rows.add(Map.of("executionId",ctx.executionId,"status",ctx.published.status().name(),"nativePlan",ctx.nativePlan,
+                "workerFinished",ctx.exitFinished,"cancelWorkers",ctx.exitCancelWorkers+ctx.cancelWorkers+pendingNetworkCallbacks(ctx),"cleanupConfirmed",confirmed,
+                "errorReason",reason!=null?reason:!confirmed?"SHUTDOWN_CLEANUP_UNCONFIRMED":"NONE"));
+        }
+        var capability=planCapabilityService==null?Map.<String,Object>of("drained",true):planCapabilityService.shutdownSnapshot();
+        drained&=Boolean.TRUE.equals(capability.get("drained"));
+        return Map.of("capabilityProbes",capability,"stopping",stopping,"drained",stopping&&drained,"degraded",!stopping||!drained||issues,
+            "errorReason",!stopping||!drained?"SHUTDOWN_CLEANUP_UNCONFIRMED":issues?"SHUTDOWN_CANCEL_SIGNAL_FAILED":"NONE","tasks",rows);
+    }
+    public void shutdown(){beginShutdown();}
 
     /**
      * S2 — validate the user SQL is a single SELECT BEFORE any connection is
@@ -334,7 +610,11 @@ public class ExecutionEngine {
             selectOnlyGuard.requireSingleSelect(ctx.sql, dialect);
             return true;
         } catch (IllegalArgumentException | IllegalStateException e) {
-            ctx.publish(ExecutionStatus.FAILED, errorResult(ctx.executionId, ExecutionStatus.FAILED, e.getMessage()));
+            var failure=errorResult(ctx.executionId, ExecutionStatus.FAILED, e.getMessage());
+            var unsupported=com.bitdata.sqlworkbench.sql.SqlSerializationException.find(e);
+            if(unsupported!=null)failure=failure.withFailureReason(unsupported.reason());
+            else if(ctx.ordinaryOracle)failure=failure.withFailureReason("SQL_SELECT_GUARD_REJECTED");
+            ctx.publish(ExecutionStatus.FAILED, failure);
             return false;
         }
     }
@@ -342,13 +622,22 @@ public class ExecutionEngine {
     /** Data-mode path: run SELECT, materialize rows. NO EXPLAIN here. */
     private void runSelect(ExecutionContext ctx) {
         ctx.publish(ExecutionStatus.RUNNING, null);
-        String dialect = lookupDialect(ctx.connectionId);
+        String dialect = ctx.ordinaryOracle?ctx.ordinaryDialect:lookupDialect(ctx.connectionId);
         if (!passesSelectGuard(ctx, dialect)) return;
         long startTime = System.currentTimeMillis();
 
         log.info("Executing SQL on connection {}: {}", ctx.connectionId, ctx.sql);
 
-        try (Connection conn = connectionService.openJdbcConnection(ctx.connectionId)) {
+        try (Connection conn = openOrdinary(ctx)) {
+            if(ctx.ordinaryOracle) {
+                long millis=(long)ctx.effectiveTimeoutSeconds*1000L+15000L;
+                if(millis<=0||millis>Integer.MAX_VALUE)throw new SQLException("ORACLE_NETWORK_TIMEOUT_RANGE_UNSUPPORTED");
+                try {
+                    ctx.networkRegistration=networkTimeouts.register(ctx.ordinaryConnectionTicket,ctx.networkReason::set);
+                    conn.setNetworkTimeout(ctx.networkRegistration,(int)millis);
+                }
+                catch(SQLException|RuntimeException unavailable){throw new SQLException("ORACLE_NETWORK_TIMEOUT_SETUP_FAILED",unavailable);}
+            }
             DatabaseStrategy strategy = strategyFactory.get(dialect);
             if (strategy.supportsReadOnly()) {
                 strategy.configureReadOnly(conn);
@@ -380,7 +669,7 @@ public class ExecutionEngine {
                     List<ExecutionResult.ColumnInfo> columns = new ArrayList<>();
                     for (int i = 1; i <= colCount; i++) {
                         columns.add(new ExecutionResult.ColumnInfo(
-                            meta.getColumnName(i),
+                            ctx.ordinaryOracle ? meta.getColumnLabel(i) : meta.getColumnName(i),
                             meta.getColumnTypeName(i)
                         ));
                     }
@@ -445,6 +734,8 @@ public class ExecutionEngine {
                 : e.getMessage();
             ExecutionResult failure=errorResultWithTiming(ctx.executionId, resolved, message,
                 System.currentTimeMillis() - startTime);
+            if(ctx.ordinaryOracle&&e.getMessage()!=null&&e.getMessage().startsWith("ORACLE_NETWORK_TIMEOUT_"))failure=failure.withFailureReason(e.getMessage());
+            if(ctx.ordinaryOracle&&"CONNECTION_CHANGED".equals(e.getMessage()))failure=failure.withFailureReason("EXECUTION_OWNER_CHANGED");
             if(e instanceof com.bitdata.sqlworkbench.connection.WorkloadBusyException) failure=failure.withFailureReason("WORKLOAD_BUSY");
             ctx.publish(resolved, failure);
             log.warn("Execution {} {}: {}", ctx.executionId, resolved, e.getMessage());
@@ -467,11 +758,12 @@ public class ExecutionEngine {
                 "This application does not support the requested plan channel").withCredentialFailure("APPLICATION_CHANNEL_UNSUPPORTED"));
             return;
         }
+        if(ctx.nativePlan) { runNativeAnalyze(ctx); return; }
         long startTime = System.currentTimeMillis();
 
         log.info("Analyzing SQL on connection {}: {}", ctx.connectionId, ctx.sql);
 
-        try (Connection conn = connectionService.openJdbcConnection(ctx.connectionId)) {
+        try (Connection conn = trackOrdinary(connectionService.openJdbcConnection(ctx.connectionId),ctx)) {
             PlanCapabilities capabilities;
             try { capabilities=PlanCapabilityService.inspect(ctx.connectionId,dialect,conn,explainServiceFactory); }
             catch(Exception probeFailure) { capabilities=PlanCapabilityService.unknown(ctx.connectionId,dialect,"CAPABILITY_PROBE_FAILED"); }
@@ -585,6 +877,250 @@ public class ExecutionEngine {
         }
     }
 
+    /** Private live owner; historical receipts remain immutable offline facts. */
+    private String ownerError(ExecutionContext ctx) {
+        if(!ctx.nativePlan)return null;
+        var current=connectionService.getById(ctx.connectionId).orElse(null);
+        if(current==null || !Objects.equals(ctx.ownerRevision,com.bitdata.sqlworkbench.connection.ConnectionIdentity.revision(current))
+            || current.readonly()!=ctx.owner.readonly() || !Objects.equals(current.keychainRef(),ctx.owner.keychainRef())
+            || !Objects.equals(current.credentialState(),ctx.owner.credentialState()))return "CONNECTION_CHANGED";
+        if(ctx.sessionId!=null) {
+            var session=sessionStore==null?null:sessionStore.findById(ctx.sessionId).orElse(null);
+            if(session==null || ctx.sessionInstance==null || !ctx.sessionInstance.equals(session.workspaceInstanceId()))return "SESSION_INSTANCE_CHANGED";
+        }
+        return null;
+    }
+
+    private void nativeCheckpoint(ExecutionContext ctx) {
+        if(ctx.cancelled)throw new CancellationException("PLAN_CANCELLED");
+        String owner=ownerError(ctx);if(owner!=null)throw new IllegalStateException(owner);
+        if(System.nanoTime()>=ctx.deadlineNanos) {
+            terminateNative(ctx,ExecutionStatus.TIMED_OUT,"PLAN_TOTAL_BUDGET_EXCEEDED");
+            throw new CancellationException("PLAN_TOTAL_BUDGET_EXCEEDED");
+        }
+    }
+
+    private int nativeTimeout(ExecutionContext ctx) {
+        nativeCheckpoint(ctx);
+        long seconds=TimeUnit.NANOSECONDS.toSeconds(ctx.deadlineNanos-System.nanoTime());
+        if(seconds<1) {
+            terminateNative(ctx,ExecutionStatus.TIMED_OUT,"PLAN_TOTAL_BUDGET_EXCEEDED");
+            throw new CancellationException("PLAN_TOTAL_BUDGET_EXCEEDED");
+        }
+        return (int)Math.min(seconds,ctx.effectiveTimeoutSeconds);
+    }
+
+    /** Publish first; a blocked driver cancel never blocks the HTTP caller or deadline. */
+    private boolean terminateNative(ExecutionContext ctx,ExecutionStatus status,String reason) {
+        synchronized(ctx) {
+            if(!ctx.publish(status,errorResult(ctx.executionId,status,reason).withFailureReason(reason)))return false;
+            ctx.cancelled=true;
+            ctx.cleanupReason="CLEANUP_PENDING";
+            Statement statement=ctx.statement;
+            if(statement==null){ctx.nativeSignal="NOT_REQUIRED";return true;}
+            ctx.nativeSignal="PENDING";
+            var ticket=ctx.nativeTicket==null?null:ctx.nativeTicket.retain();
+            ctx.cancelWorkers++;
+            try {
+                planCancellation.execute(()->{
+                    try {statement.cancel();ctx.nativeSignal="SENT";}
+                    catch(SQLException|RuntimeException failure) {ctx.nativeSignal="FAILED";ctx.cleanupReason="CANCEL_SIGNAL_FAILED";}
+                    finally {
+                        synchronized(ctx) {ctx.cancelWorkers--;if(ctx.cancelWorkers==0&&"CANCEL_SIGNAL_PENDING".equals(ctx.cleanupReason))ctx.cleanupReason=null;}
+                        if(ticket!=null)ticket.release();
+                    }
+                });
+            } catch(RejectedExecutionException unavailable) {
+                ctx.cancelWorkers--;if(ticket!=null)ticket.release();ctx.nativeSignal="REJECTED";ctx.cleanupReason="CANCEL_SIGNAL_UNAVAILABLE";
+            }
+            return true;
+        }
+    }
+
+    private String finishNativeResources(ExecutionContext ctx,Connection connection,Statement setup,Statement query,String setting,boolean lost) {
+        var held=ctx.nativeTicket==null?null:ctx.nativeTicket.retain();
+        var task=new FutureTask<String>(()->{
+            try {
+                ctx.nativeConnectionLock.lock();
+                try {
+                    String state=SqlServerPlanCollector.closeResources(connection,setup,query,setting,lost);
+                    synchronized(ctx) {ctx.cleanupReason="CONFIRMED".equals(state)?(ctx.cancelWorkers>0?"CANCEL_SIGNAL_PENDING":null):state;}
+                    return state;
+                } finally {ctx.nativeConnectionLock.unlock();}
+            } finally {if(held!=null)held.release();}
+        });
+        try {planCleanup.execute(task);}
+        catch(RejectedExecutionException unavailable) {
+            // Capacity remains pinned; perform cleanup on the existing worker rather than abandon resources.
+            task.run();ctx.cleanupReason="CLEANUP_EXECUTOR_UNAVAILABLE";
+            return "CLEANUP_EXECUTOR_UNAVAILABLE";
+        }
+        try {return task.get(3,TimeUnit.SECONDS);}
+        catch(TimeoutException timeout) {ctx.cleanupReason="CLEANUP_PENDING";return "CLEANUP_PENDING";}
+        catch(InterruptedException interrupted) {Thread.currentThread().interrupt();ctx.cleanupReason="CLEANUP_PENDING";return "CLEANUP_PENDING";}
+        catch(ExecutionException failure) {ctx.cleanupReason="PLAN_CLEANUP_FAILED";return "PLAN_CLEANUP_FAILED";}
+    }
+
+    private <T> T nativeMetadata(ExecutionContext ctx,Callable<T> work) throws Exception {
+        var held=ctx.nativeTicket.retain();
+        long deadline=Math.min(ctx.deadlineNanos,System.nanoTime()+TimeUnit.MILLISECONDS.toNanos(metadataBudgetMillis));
+        var task=new FutureTask<T>(()->{
+            try {
+                ctx.nativeConnectionLock.lock();
+                try {
+                    nativeCheckpoint(ctx);
+                    if(System.nanoTime()>=deadline)throw new SQLTimeoutException("PLAN_METADATA_BUDGET_EXCEEDED");
+                    return work.call();
+                } finally {ctx.nativeConnectionLock.unlock();}
+            } finally {held.release();}
+        });
+        try {planMetadata.execute(task);}
+        catch(RejectedExecutionException busy) {held.release();throw new IllegalStateException("PLAN_METADATA_EXECUTOR_BUSY");}
+        try {return task.get(Math.max(1,deadline-System.nanoTime()),TimeUnit.NANOSECONDS);}
+        catch(TimeoutException timeout) {
+            terminateNative(ctx,ExecutionStatus.TIMED_OUT,"PLAN_METADATA_BUDGET_EXCEEDED");
+            throw new SQLTimeoutException("PLAN_METADATA_BUDGET_EXCEEDED");
+        } catch(ExecutionException failure) {
+            if(failure.getCause() instanceof Exception cause)throw cause;
+            throw failure;
+        }
+    }
+
+    private void runNativeAnalyze(ExecutionContext ctx) {
+        if("oracle".equals(ctx.owner.dialect())) {runOracleAnalyze(ctx);return;}
+        long started=System.currentTimeMillis();
+        com.bitdata.sqlworkbench.connection.WorkloadLeaseManager.Ticket ticket=null;
+        Connection connection=null;
+        boolean transferred=false,lost=false;
+        try {
+            nativeCheckpoint(ctx);
+            ticket=connectionService.acquireOrdinaryWorkload();
+            synchronized(ctx) {ctx.nativeTicket=ticket;}
+            nativeCheckpoint(ctx);
+            long remaining=Math.max(1,TimeUnit.NANOSECONDS.toMillis(ctx.deadlineNanos-System.nanoTime()));
+            ctx.nativeConnectionTicket=ticket.retain();
+            connection=connectionService.openOrdinaryWithTimeout(ctx.connectionId,ctx.ownerRevision,remaining,ctx.nativeConnectionTicket);
+            {
+                nativeCheckpoint(ctx);
+                Connection owned=connection;
+                var capabilities=nativeMetadata(ctx,()->PlanCapabilityService.inspect(ctx.connectionId,"sqlserver",owned,explainServiceFactory,()->nativeCheckpoint(ctx)));
+                ctx.capture=new PlanCapture(1,ctx.analyzeMode,null,ctx.sql,null,ctx.connectionId,ctx.sessionId,"sqlserver",
+                    capabilities.serverProduct(),capabilities.serverVersion(),null,capabilities,"NOT_STARTED",List.of());
+                if(!capabilities.supports(ctx.analyzeMode))throw new IllegalStateException(capabilities.errorReason()==null?"APPLICATION_CHANNEL_UNSUPPORTED":capabilities.errorReason());
+                nativeCheckpoint(ctx);
+                var environment=nativeMetadata(ctx,()->PlanEvidence.sqlServerEnvironment(owned,Math.min(5,nativeTimeout(ctx)),()->nativeCheckpoint(ctx)));
+                nativeCheckpoint(ctx);
+                ctx.capture=new PlanCapture(1,ctx.analyzeMode,ctx.analyzeMode,ctx.sql,ctx.sql,ctx.connectionId,ctx.sessionId,"sqlserver",
+                    capabilities.serverProduct(),capabilities.serverVersion(),null,capabilities,"NOT_STARTED",List.of());
+                transferred=true;
+                var outcome=SqlServerPlanCollector.capture(connection,ctx.sql,"actual".equals(ctx.analyzeMode),()->nativeTimeout(ctx),
+                    ()->nativeCheckpoint(ctx),statement->{synchronized(ctx){ctx.statement=statement;}},
+                    (resource,setup,query,setting,transportLost)->finishNativeResources(ctx,resource,setup,query,setting,transportLost));
+                nativeCheckpoint(ctx);
+                var documents=outcome.documents();
+                var parsed=documents.size()==1?documents.get(0):new SqlServerPlanParser.NativeParsed(outcome.status(),outcome.errorReason(),
+                    documents.isEmpty()?null:documents.stream().map(SqlServerPlanParser.NativeParsed::rawPlan).collect(java.util.stream.Collectors.joining("\n")),null,List.of(),List.of());
+                var details=SqlServerPlanParser.details(parsed,environment);
+                var issues=new ArrayList<PlanCapture.Issue>();
+                if(outcome.errorReason()!=null)issues.add(new PlanCapture.Issue(outcome.errorReason(),null,"Native plan unavailable or incomplete"));
+                if(environment.errorReason()!=null)issues.add(new PlanCapture.Issue(environment.errorReason(),null,"Environment capture incomplete"));
+                issues.add(new PlanCapture.Issue("SQLSERVER_METRIC_COMPARABILITY_LIMITED",null,"Thread facts are not per-loop metrics; full SQL mapping is unsupported"));
+                ctx.capture=new PlanCapture(1,ctx.analyzeMode,ctx.analyzeMode,ctx.sql,ctx.sql,ctx.connectionId,ctx.sessionId,"sqlserver",
+                    capabilities.serverProduct(),capabilities.serverVersion(),java.time.Instant.now().toString(),capabilities,outcome.status(),issues,details);
+                // Close the dedicated physical connection before successful publication.
+                synchronized(ctx) {ctx.nativeResult=new ExecutionResult(ctx.executionId,ExecutionStatus.COMPLETED,null,null,0,
+                    new ExecutionResult.Timing(System.currentTimeMillis()-started),parsed.plan(),parsed.plan()==null?outcome.errorReason():null,null,null,
+                    outcome.errorReason()!=null?outcome.errorReason():environment.errorReason()!=null?environment.errorReason():"SQLSERVER_METRIC_COMPARABILITY_LIMITED",true);}
+            }
+            nativeCheckpoint(ctx);
+            ctx.publish(ExecutionStatus.COMPLETED,ctx.nativeResult);
+        } catch(Exception failure) {
+            lost=OraclePlanCollector.transportLost(failure);
+            ExecutionStatus status=failure instanceof SQLTimeoutException || failure instanceof com.bitdata.sqlworkbench.connection.ConnectTimeoutException
+                ?ExecutionStatus.TIMED_OUT:ExecutionStatus.FAILED;
+            String reason=failure instanceof SQLException?"NATIVE_SQL_EXCEPTION":failure.getMessage();
+            if(failure instanceof SQLException sql && sql.getSQLState()!=null&&sql.getSQLState().startsWith("08"))reason="CONNECTION_FAILED";
+            if(failure instanceof com.bitdata.sqlworkbench.connection.ConnectTimeoutException)reason="CONNECTION_TIMEOUT";
+            if(failure instanceof SQLException sql && (sql.getErrorCode()==229||sql.getErrorCode()==262))reason="PLAN_PERMISSION_DENIED";
+            if(failure instanceof com.bitdata.sqlworkbench.connection.CredentialFailure credential)reason=credential.code;
+            if(failure instanceof com.bitdata.sqlworkbench.connection.WorkloadBusyException)reason="WORKLOAD_BUSY";
+            ctx.publish(status,errorResultWithTiming(ctx.executionId,status,"Native plan capture failed",System.currentTimeMillis()-started).withFailureReason(reason));
+        } finally {
+            if(connection!=null&&!transferred)finishNativeResources(ctx,connection,null,null,null,lost);
+            synchronized(ctx) {
+                ctx.workerFinished=true;ctx.statement=null; // Keep the shared resource observation after releasing the worker reference.
+                if(ctx.cancelWorkers==0&&"CLEANUP_PENDING".equals(ctx.cleanupReason)&&connection==null)ctx.cleanupReason=null;
+            }
+            if(ticket!=null)ticket.release();
+        }
+    }
+
+    /** Oracle captures on a dedicated, shared-lease connection; business SELECT is never replayed. */
+    private void runOracleAnalyze(ExecutionContext ctx) {
+        long started=System.currentTimeMillis();Connection connection=null;boolean transferred=false,lost=false;
+        com.bitdata.sqlworkbench.connection.WorkloadLeaseManager.Ticket ticket=null;
+        try {
+            if("SID".equals(connectionService.getById(ctx.connectionId).orElseThrow().connectionType()))throw new IllegalStateException("CONNECTION_TYPE_UNVERIFIED");
+            nativeCheckpoint(ctx);ticket=connectionService.acquireOrdinaryWorkload();synchronized(ctx){ctx.nativeTicket=ticket;}
+            var connectionTicket=ticket.retain();ctx.nativeConnectionTicket=connectionTicket;
+            connection=connectionService.openOrdinaryWithTimeout(ctx.connectionId,ctx.ownerRevision,
+                Math.max(1,TimeUnit.NANOSECONDS.toMillis(ctx.deadlineNanos-System.nanoTime())),connectionTicket);
+            nativeCheckpoint(ctx);Connection owned=connection;
+            ctx.networkRegistration=networkTimeouts.register(connectionTicket,ctx.networkReason::set);
+            nativeMetadata(ctx,()->{owned.setNetworkTimeout(ctx.networkRegistration,(int)Math.max(1,Math.min(15000,TimeUnit.NANOSECONDS.toMillis(ctx.deadlineNanos-System.nanoTime()))));return null;});
+            var capabilities=nativeMetadata(ctx,()->PlanCapabilityService.inspect(ctx.connectionId,"oracle",owned,explainServiceFactory,()->nativeCheckpoint(ctx)));
+            ctx.capture=new PlanCapture(1,ctx.analyzeMode,null,ctx.sql,null,ctx.connectionId,ctx.sessionId,"oracle",capabilities.serverProduct(),capabilities.serverVersion(),null,capabilities,"NOT_STARTED",List.of());
+            if(!capabilities.supports(ctx.analyzeMode))throw new IllegalStateException(capabilities.errorReason()==null?"PLAN_CAPABILITY_UNAVAILABLE":capabilities.errorReason());
+            var environment=nativeMetadata(ctx,()->OraclePlanCollector.environment(owned,Math.min(5,nativeTimeout(ctx)),()->nativeCheckpoint(ctx)));
+            nativeCheckpoint(ctx);transferred=true;
+            var outcome=OraclePlanCollector.capture(owned,ctx.sql,ctx.analyzeMode,()->nativeTimeout(ctx),()->nativeCheckpoint(ctx),
+                statement->{synchronized(ctx){ctx.statement=statement;}},
+                (resource,statements,transportLost)->finishOracleResources(ctx,resource,statements,transportLost));
+            nativeCheckpoint(ctx);var parsed=outcome.parsed();var details=OraclePlanAdapter.details(outcome,environment);var issues=new ArrayList<PlanCapture.Issue>();
+            for(String reason:parsed.issues())issues.add(new PlanCapture.Issue(reason,null,"Oracle plan evidence is incomplete"));
+            if(!"CONFIRMED".equals(outcome.cleanup()))issues.add(new PlanCapture.Issue(outcome.cleanup(),null,"Client cleanup is unconfirmed"));
+            issues.add(new PlanCapture.Issue("ORACLE_METRIC_COMPARABILITY_LIMITED",null,"Native LAST values are separate facts; loops, estimate ratios and node durations are not certified"));
+            if("actual".equals(ctx.analyzeMode))issues.add(new PlanCapture.Issue("ORACLE_COLLECTION_OVERHEAD",null,"Session statistics and a unique SQL comment change collection cost and cursor identity"));
+            ctx.capture=new PlanCapture(1,ctx.analyzeMode,ctx.analyzeMode,ctx.sql,outcome.commandSql(),ctx.connectionId,ctx.sessionId,"oracle",
+                capabilities.serverProduct(),capabilities.serverVersion(),java.time.Instant.now().toString(),capabilities,parsed.parseStatus(),issues,details);
+            String reason=parsed.errorReason()!=null?parsed.errorReason():!"CONFIRMED".equals(outcome.cleanup())?outcome.cleanup():environment.errorReason()!=null?environment.errorReason():"ORACLE_METRIC_COMPARABILITY_LIMITED";
+            var result=new ExecutionResult(ctx.executionId,ExecutionStatus.COMPLETED,null,null,0,new ExecutionResult.Timing(System.currentTimeMillis()-started),parsed.plan(),parsed.plan()==null?reason:null,null,null,reason,true);
+            nativeCheckpoint(ctx);ctx.publish(ExecutionStatus.COMPLETED,result);
+        }catch(Exception failure){
+            lost=OraclePlanCollector.transportLost(failure);
+            ExecutionStatus status=failure instanceof SQLTimeoutException||failure instanceof com.bitdata.sqlworkbench.connection.ConnectTimeoutException?ExecutionStatus.TIMED_OUT:ExecutionStatus.FAILED;
+            String reason=failure instanceof SQLException?"ORACLE_PLAN_SQL_REJECTED":failure.getMessage();
+            if(failure instanceof SQLException sql){if(lost)reason="CONNECTION_FAILED";else if(Set.of(942,1031).contains(Math.abs(sql.getErrorCode())))reason="PLAN_PERMISSION_DENIED";else if(Math.abs(sql.getErrorCode())==1013)reason="ORACLE_CANCELLED_OR_TIMED_OUT";}
+            if(failure instanceof com.bitdata.sqlworkbench.connection.CredentialFailure credential)reason=credential.code;
+            if(failure instanceof com.bitdata.sqlworkbench.connection.WorkloadBusyException)reason="WORKLOAD_BUSY";
+            ctx.publish(status,errorResultWithTiming(ctx.executionId,status,"Oracle plan capture failed",System.currentTimeMillis()-started).withFailureReason(reason==null?"ORACLE_PLAN_CAPTURE_FAILED":reason));
+        }finally{
+            if(connection!=null&&!transferred)finishOracleResources(ctx,connection,List.of(),lost);
+            synchronized(ctx){ctx.workerFinished=true;ctx.statement=null;if(connection==null&&ctx.cancelWorkers==0&&"CLEANUP_PENDING".equals(ctx.cleanupReason))ctx.cleanupReason=null;}
+            if(ticket!=null)ticket.release();
+            reconcileNativeNetwork(ctx);
+        }
+    }
+    private void reconcileNativeNetwork(ExecutionContext ctx){
+        if(ctx.nativeConnectionTicket!=null&&ctx.nativeConnectionTicket.isReleased()&&!ctx.nativeConnectionTicket.isUnconfirmed()&&ctx.networkRegistration!=null)
+            ctx.networkRegistration.connectionCloseConfirmed();
+    }
+    private String finishOracleResources(ExecutionContext ctx,Connection connection,List<Statement> statements,boolean lost){
+        var held=ctx.nativeTicket.retain();var task=new FutureTask<String>(()->{
+            ctx.nativeConnectionLock.lock();
+            try{
+                String state=OraclePlanCollector.close(connection,statements,lost);
+                synchronized(ctx){ctx.cleanupReason="CONFIRMED".equals(state)?ctx.cancelWorkers>0?"CANCEL_SIGNAL_PENDING":null:state;}
+                reconcileNativeNetwork(ctx);return state;
+            }finally{ctx.nativeConnectionLock.unlock();held.release();}
+        });
+        try{planCleanup.execute(task);}catch(RejectedExecutionException rejected){task.run();ctx.cleanupReason="CLEANUP_EXECUTOR_UNAVAILABLE";return ctx.cleanupReason;}
+        try{return task.get(3,TimeUnit.SECONDS);}
+        catch(TimeoutException timeout){ctx.cleanupReason="CLEANUP_PENDING";return ctx.cleanupReason;}
+        catch(InterruptedException interrupted){Thread.currentThread().interrupt();ctx.cleanupReason="CLEANUP_PENDING";return ctx.cleanupReason;}
+        catch(ExecutionException failure){ctx.cleanupReason="PLAN_CLEANUP_FAILED";return ctx.cleanupReason;}
+    }
+
     // ─── Result builders ───────────────────────────────────────────────────
 
     private static ExecutionResult errorResult(String executionId, ExecutionStatus status, String message) {
@@ -639,6 +1175,30 @@ public class ExecutionEngine {
     private enum Kind { EXECUTE, ANALYZE }
 
     private static class ExecutionContext {
+        volatile OracleNetworkTimeoutExecutor.Registration networkRegistration;
+        final java.util.concurrent.atomic.AtomicReference<String> networkReason=new java.util.concurrent.atomic.AtomicReference<>();
+        long ordinaryObservedRevision;String ordinaryObservedSignature;
+        boolean ordinaryOracle,ordinaryStarted;
+        volatile boolean exitStarted,exitFinished,exitConnectionOpened,exitConnectionClosed;
+        int exitCancelWorkers;volatile String exitReason;
+        volatile boolean ordinaryStatementCloseFailed;
+        com.bitdata.sqlworkbench.connection.WorkloadLeaseManager.Ticket ordinaryWorkerTicket,ordinaryConnectionTicket;
+        String ordinaryDialect,ordinaryRevision;
+        volatile String ordinarySignal="NOT_REQUESTED",ordinaryCleanup="NOT_STARTED",ordinaryReason;
+        boolean nativePlan;
+        final java.util.concurrent.locks.ReentrantLock nativeConnectionLock=new java.util.concurrent.locks.ReentrantLock();
+        volatile String nativeSignal="NOT_REQUESTED";long nativeObservedRevision;Object nativeObservedSignature;
+        boolean ownerAdmitted;
+        com.bitdata.sqlworkbench.connection.ConnectionConfig owner;
+        String ownerRevision,sessionInstance;
+        long deadlineNanos;
+        ScheduledFuture<?> deadlineTask;
+        com.bitdata.sqlworkbench.connection.WorkloadLeaseManager.Ticket nativeTicket;
+        com.bitdata.sqlworkbench.connection.WorkloadLeaseManager.Ticket nativeConnectionTicket;
+        volatile String cleanupReason;
+        int cancelWorkers;
+        boolean workerFinished;
+        ExecutionResult nativeResult;
         PlanObservationReceiptStore observationReceiptStore;
         java.util.function.LongSupplier ticker = System::nanoTime;
         long terminalAt;

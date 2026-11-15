@@ -25,6 +25,7 @@ public class NodeToSql {
 
     public static String toSql(SqlNode node, DialectProfile profile) {
         String sql = toQuotedSql(node, profile);
+        if ("oracle".equalsIgnoreCase(profile.name())) return sql; // isolated candidate only
         return unquoteIfSafe(sql, profile.quoteChar(), profile.reservedKeywords());
     }
 

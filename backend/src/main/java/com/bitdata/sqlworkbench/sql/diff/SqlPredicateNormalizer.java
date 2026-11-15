@@ -290,6 +290,6 @@ public final class SqlPredicateNormalizer {
     }
 
     private static String canonicalText(SqlNode node) {
-        return AstSerializer.normalize(node.toSqlString(PostgresqlSqlDialect.DEFAULT).getSql());
+        return StructuralSqlCodec.normalize(StructuralSqlCodec.shape(node,"postgresql")).key();
     }
 }

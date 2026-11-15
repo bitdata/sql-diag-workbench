@@ -20,31 +20,37 @@ public class DiffController {
     public record DiffRequest(
         @JsonProperty("before") String before,
         @JsonProperty("after")  String after,
-        @JsonProperty("dialect") String dialect
-    ) {}
+        @JsonProperty("dialect") String dialect,
+        com.bitdata.sqlworkbench.session.IdentityContext identityContext,
+        java.util.List<com.bitdata.sqlworkbench.session.NodeProof> nodes
+    ) implements com.bitdata.sqlworkbench.session.IdentityBoundRequest {
+        public DiffRequest(String before, String after, String dialect) {
+            this(before,after,dialect,null,null);
+        }
+    }
 
     public record DiffResponse(
         @JsonProperty("ops") List<OpDto> ops,
         @JsonProperty("degraded") boolean degraded,
-        @JsonProperty("diffMethod") String diffMethod
-    ) {}
+        @JsonProperty("diffMethod") String diffMethod,
+        @JsonProperty("errorReason") String errorReason
+    ) {
+        public DiffResponse(List<OpDto> ops, boolean degraded, String diffMethod) { this(ops,degraded,diffMethod,null); }
+    }
 
     public record OpDto(
         @JsonProperty("kind")     String kind,
         @JsonProperty("nodeType") String nodeType,
         @JsonProperty("path")     String path,
         @JsonProperty("oldText")  String oldText,
-        @JsonProperty("newText")  String newText
+        @JsonProperty("newText")  String newText,
+        @JsonProperty("displayScope") String displayScope,
+        @JsonProperty("comparisonKey") String comparisonKey
     ) {
-        static OpDto from(ChangeOp op) {
-            return new OpDto(
-                op.kind().name(),
-                op.nodeType(),
-                op.path(),
-                op.oldText(),
-                op.newText()
-            );
+        public OpDto(String kind,String nodeType,String path,String oldText,String newText) {
+            this(kind,nodeType,path,oldText,newText,"WHOLE_SQL_CONTEXT",null);
         }
+
     }
 
     @PostMapping
@@ -62,11 +68,14 @@ public class DiffController {
                 ? request.dialect() : "postgresql";
             DiffResult result = ChangeAttribution.attributeChangeDetailed(
                 request.before(), request.after(), dialect);
-            List<OpDto> dtos = result.ops().stream().map(OpDto::from).toList();
+            var display = StructuralSqlCodec.display(new StructuralSqlCodec.Delta(result.ops(),result.degraded(),
+                result.errorReason(),result.method()),request.before(),request.after(),dialect);
+            List<OpDto> dtos = display.stream().map(op -> new OpDto(op.kind(),op.nodeType(),op.path(),
+                op.oldSql(),op.newSql(),op.displayScope(),op.comparisonKey())).toList();
             // P2-13: surface degradation so the frontend can warn the user
             // that attribution precision dropped (path-set vs LCS).
             return ResponseEntity.ok(
-                new DiffResponse(dtos, result.degraded(), result.method()));
+                new DiffResponse(dtos, result.degraded(), result.method(),result.errorReason()));
         } catch (SqlParseException e) {
             return ResponseEntity.unprocessableEntity().body(Map.of(
                 "code", "SQL_PARSE_ERROR",

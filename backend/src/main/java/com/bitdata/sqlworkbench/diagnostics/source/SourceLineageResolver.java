@@ -12,8 +12,9 @@ final class SourceLineageResolver {
     interface Catalog {
         Relation read(List<String> name, String defaultSchema) throws SQLException;
     }
-    record Relation(String schema, String name, List<String> columns, String viewDefinition, Map<String,String> columnTypes) {
-        Relation(String schema,String name,List<String> columns,String viewDefinition) {this(schema,name,columns,viewDefinition,Map.of());}
+    record Relation(String schema, String name, List<String> columns, String viewDefinition, Map<String,String> columnTypes, String errorReason) {
+        Relation(String schema,String name,List<String> columns,String viewDefinition) {this(schema,name,columns,viewDefinition,Map.of(),null);}
+        Relation(String schema,String name,List<String> columns,String viewDefinition,Map<String,String> types) {this(schema,name,columns,viewDefinition,types,null);}
         Relation { columns=List.copyOf(columns);columnTypes=Map.copyOf(columnTypes); }
     }
     record Leaf(String occurrence, Relation relation, List<String> path) {
@@ -22,7 +23,7 @@ final class SourceLineageResolver {
     record Binding(Leaf leaf, SqlNode expression) {}
     record Column(String name, List<Binding> bindings, String errorReason, String certifiedType) {
         Column(String name,List<Binding> bindings,String errorReason) {this(name,bindings,errorReason,null);}
-        Column { bindings=List.copyOf(bindings); }
+        Column { bindings=errorReason==null?List.copyOf(bindings):List.of(); if(errorReason!=null)certifiedType=null; }
     }
     record Result(List<Column> columns, List<Leaf> leaves) {
         Result { columns=List.copyOf(columns); leaves=List.copyOf(leaves); }
@@ -55,7 +56,7 @@ final class SourceLineageResolver {
     }
     private SqlNode parse(String sql) throws SqlParseException {
         return SqlParser.create(sql,resolver.parserConfig(dialect)
-            .withUnquotedCasing(dialect.equals("postgresql")?Casing.TO_LOWER:Casing.UNCHANGED)).parseQuery();
+            .withUnquotedCasing(dialect.equals("postgresql")?Casing.TO_LOWER:dialect.equals("oracle")?Casing.TO_UPPER:Casing.UNCHANGED)).parseQuery();
     }
     private void limit(int depth) {
         if(depth>24 || ++visits>256 || leaves.size()>64)throw fail("SOURCE_LINEAGE_LIMIT");
@@ -139,7 +140,7 @@ final class SourceLineageResolver {
             }
             Relation relation=catalog.read(id.names,schema);
             if(relation==null)throw fail("SOURCE_RELATION_UNAVAILABLE");
-            if(relation.viewDefinition()!=null) {
+            if(relation.errorReason()==null && relation.viewDefinition()!=null) {
                 String identity=relation.schema()+"."+relation.name();
                 if(!activeViews.add(identity))throw fail("SOURCE_VIEW_CYCLE");
                 try {
@@ -159,7 +160,7 @@ final class SourceLineageResolver {
             if(leaves.size()>=64)throw fail("SOURCE_LINEAGE_LIMIT");
             var leaf=new Leaf("source-"+(leaves.size()+1),relation,append(path,"table:"+relation.schema()+"."+relation.name()));leaves.add(leaf);
             var columns=relation.columns().stream().map(column->new Column(column,List.of(new Binding(leaf,
-                new SqlIdentifier(List.of("src",column),SqlParserPos.ZERO))),null,relation.columnTypes().get(column))).toList();
+                new SqlIdentifier(List.of("src",column),SqlParserPos.ZERO))),relation.errorReason(),relation.columnTypes().get(column))).toList();
             return List.of(new Input(name,columns));
         }
         return List.of(new Input("",query(node,ctes,schema,append(path,"derived"),depth+1)));

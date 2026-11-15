@@ -1,3 +1,4 @@
+import { BackendStopState } from './BackendStopState'
 import { spawn, type ChildProcess } from 'child_process'
 import { join, resolve } from 'path'
 import { app } from 'electron'
@@ -6,7 +7,7 @@ import { EventEmitter } from 'events'
 import fs from 'fs'
 import { randomBytes } from 'crypto'
 
-export type BackendStatus = 'starting' | 'running' | 'stopped' | 'crashed' | 'error'
+export type BackendStatus = 'starting' | 'running' | 'stopping' | 'stopped' | 'crashed' | 'error'
 export interface BackendStatusEvent {
   status: BackendStatus
   error?: string
@@ -37,6 +38,7 @@ function findFreePort(): Promise<number> {
 
 export class BackendLauncher extends EventEmitter {
   private process: ChildProcess | null = null
+  private readonly stopState = new BackendStopState()
   private port = 0
   private restartCount = 0
   private lastStartTime = 0
@@ -64,14 +66,17 @@ export class BackendLauncher extends EventEmitter {
   getToken() { return this.authToken }
 
   async start(): Promise<number> {
+    const generation = this.stopState.beginStart()
     this.stoppedIntentionally = false
     this.restartCount = 0
     try {
       this.port = await findFreePort()
+      if (!this.stopState.canSpawn(generation)) throw new BackendFailure('BACKEND_STOPPED', 'Backend startup was stopped.')
       this.authToken = randomBytes(32).toString('hex')
-      await this.launchProcess()
+      await this.launchProcess(generation)
       return this.port
     } catch (error) {
+      this.stopState.startFailed(generation)
       if (!this.stoppedIntentionally) this.failure(error)
       throw error
     }
@@ -80,7 +85,8 @@ export class BackendLauncher extends EventEmitter {
     const failure = error instanceof BackendFailure ? error : new BackendFailure('BACKEND_START_FAILED', 'Could not start the backend. Close the app and try again. If the problem persists, reinstall the application.')
     this.emitStatus('error', failure.message, failure.errorReason)
   }
-  private async launchProcess(): Promise<void> {
+  private async launchProcess(generation: number): Promise<void> {
+    if (!this.stopState.canSpawn(generation)) throw new BackendFailure('BACKEND_STOPPED', 'Backend startup was stopped.')
     const paths = backendPaths(app.isPackaged, process.platform, process.resourcesPath, __dirname)
     if (!fs.existsSync(paths.jar)) throw new BackendFailure('BACKEND_JAR_MISSING', app.isPackaged
       ? 'The backend is missing. Reinstall the application; your saved data will be kept.'
@@ -95,6 +101,7 @@ export class BackendLauncher extends EventEmitter {
         `--sql-workbench.data-dir=${join(resolve(process.env.SQL_WORKBENCH_TEST_ROOT), 'data')}`,
         `--sql-workbench.credentials.legacy-path=${join(resolve(process.env.SQL_WORKBENCH_TEST_ROOT), 'data', 'credentials.dat')}`,
       ] : [])], { windowsHide: true })
+    this.stopState.attach(child, generation)
     this.process = child
     let ready = false
     let ended = false
@@ -107,12 +114,12 @@ export class BackendLauncher extends EventEmitter {
       const fail = (reason: string, message: string) => {
         if (ended) return
         ended = true; cleanup()
-        if (this.process === child) this.process = null
-        child.kill()
+        this.stopState.requestStop()
         reject(new BackendFailure(reason, message))
       }
       this.abortStartup = () => fail('BACKEND_STOPPED', 'Backend startup was stopped.')
       child.once('error', (error: NodeJS.ErrnoException) => {
+        if (child.pid === undefined) { this.stopState.spawnFailed(child); if (this.process === child) this.process = null }
         const missing = error.code === 'ENOENT'
         fail(missing ? (app.isPackaged && process.platform === 'win32' ? 'BUNDLED_RUNTIME_MISSING' : 'JAVA_NOT_FOUND') : 'BACKEND_SPAWN_FAILED',
           missing && !app.isPackaged ? 'Java runtime not found. Install JDK 17+ and add java to PATH.'
@@ -120,6 +127,7 @@ export class BackendLauncher extends EventEmitter {
       })
       child.once('exit', () => {
         if (this.process === child) this.process = null
+        if (this.stoppedIntentionally) this.emitStatus('stopped', undefined, 'BACKEND_STOPPED')
         if (!ready) { fail('BACKEND_EXITED_EARLY', 'The backend stopped before it was ready. Reinstall the application or check the application logs.'); return }
         if (this.stoppedIntentionally) { this.emitStatus('stopped'); return }
         this.emitStatus('crashed', 'The backend stopped unexpectedly. Attempting to restart…', 'BACKEND_CRASHED')
@@ -152,21 +160,28 @@ export class BackendLauncher extends EventEmitter {
     if (++this.restartCount > 5) { this.emitStatus('error', 'The backend could not stay running after five restart attempts. Close the app and try again.', 'BACKEND_RESTART_EXHAUSTED'); return }
     this.restartTimer = setTimeout(async () => {
       this.restartTimer = null
-      try { await this.launchProcess() }
-      catch (error) { if (!this.stoppedIntentionally) { this.failure(error); this.scheduleRestart() } }
+      let generation: number | undefined
+      try { generation = this.stopState.beginStart(); await this.launchProcess(generation) }
+      catch (error) { if (generation !== undefined) this.stopState.startFailed(generation); if (!this.stoppedIntentionally) { this.failure(error); this.scheduleRestart() } }
     }, Math.min(1000 * 2 ** (this.restartCount - 1), 60_000))
   }
   private emitStatus(status: BackendStatus, error?: string, errorReason?: string) {
     this.state = { status, error, errorReason, degraded: status !== 'running', port: this.port }
     this.emit('status-change', this.getStatus())
   }
-  stop(): void {
+  prepareStop(): void {
     this.stoppedIntentionally = true
+    this.stopState.prepareStop()
     if (this.restartTimer) clearTimeout(this.restartTimer)
     this.restartTimer = null
+  }
+  processExitConfirmed(): boolean { return this.stopState.processExitConfirmed() }
+  stop(): boolean {
+    this.prepareStop()
     this.abortStartup?.()
-    this.process?.kill('SIGTERM')
-    this.process = null
-    this.emitStatus('stopped', undefined, 'BACKEND_STOPPED')
+    const accepted = this.stopState.requestStop()
+    this.emitStatus(this.processExitConfirmed() ? 'stopped' : 'stopping', undefined,
+      !accepted ? 'PROCESS_STOP_REQUEST_FAILED' : this.processExitConfirmed() ? 'BACKEND_STOPPED' : 'BACKEND_PROCESS_EXIT_UNCONFIRMED')
+    return accepted
   }
 }

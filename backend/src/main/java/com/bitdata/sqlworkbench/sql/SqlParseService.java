@@ -269,7 +269,7 @@ public class SqlParseService {
 
         // Body depends on all CTEs referenced in it
         java.util.Set<String> bodyDeps = CteDependencyGraph.collectCteRefs(
-            with.body, graph.allCteNames()
+            with.body, graph.allCteNames(), dialect
         );
         return new CteDependencyResult(ctes, bodyDeps.isEmpty() ? List.of() : bodyDeps.stream().toList());
     }
@@ -335,7 +335,7 @@ public class SqlParseService {
     private String cacheKey(String sql, String dialect) {
         // P0-5: 32-bit hashCode collides (e.g. "Aa"/"BB") and would serve one
         // SQL's ParseResult for another. SHA-256, same utility as FragmentIdentity.
-        return (dialect != null ? dialect.toLowerCase() : "postgresql") + ":" + FragmentIdentity.sha256Hex(sql);
+        return com.bitdata.sqlworkbench.sql.diff.StructuralSqlCodec.POLICY + ":" + (dialect != null ? dialect.toLowerCase() : "postgresql") + ":" + FragmentIdentity.sha256Hex(sql);
     }
 
     public void clearCache() {

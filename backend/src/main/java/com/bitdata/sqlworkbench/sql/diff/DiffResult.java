@@ -14,5 +14,8 @@ import java.util.Set;
  * @param degraded true 当且仅当 diff 退回了 path 差集
  * @param method   产出 ops 的算法名："LCS" 或 "PATH_SET"
  */
-public record DiffResult(Set<ChangeOp> ops, boolean degraded, String method) {
+public record DiffResult(Set<ChangeOp> ops, boolean degraded, String method, String errorReason) {
+    public DiffResult(Set<ChangeOp> ops, boolean degraded, String method) {
+        this(ops,degraded,method,degraded ? "LCS_BUDGET_EXCEEDED" : null);
+    }
 }

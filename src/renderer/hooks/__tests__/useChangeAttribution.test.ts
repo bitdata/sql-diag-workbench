@@ -1,7 +1,9 @@
+import { graphRequest } from '../../utils/workspaceIdentity'
+import { currentWorkspace } from '../../test/currentWorkspace'
 // src/renderer/hooks/__tests__/useChangeAttribution.test.ts
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { renderHook, waitFor } from '@testing-library/react'
-import { useChangeAttribution } from '../useChangeAttribution'
+import { useChangeAttribution as actualuseChangeAttribution } from '../useChangeAttribution'
 import type { ChangeOp } from '../useChangeAttribution'
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -123,6 +125,7 @@ describe('useChangeAttribution', () => {
     expect(init.method).toBe('POST')
     expect(init.headers).toEqual({ 'Content-Type': 'application/json' })
     expect(JSON.parse(init.body as string)).toEqual({
+      ...graphRequest(currentWorkspace),
       before: 'SELECT a',
       after: 'SELECT b',
       dialect: 'postgresql',
@@ -478,3 +481,5 @@ describe('useChangeAttribution', () => {
     // the backend might be a UX concern. Verify if this is intentional.
   })
 })
+
+function useChangeAttribution(url: string | null, before: string, after: string, dialect: import('../../types/session').SqlDialect) { return actualuseChangeAttribution(url,before,after,dialect,currentWorkspace) }

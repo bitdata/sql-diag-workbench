@@ -25,7 +25,8 @@ describe('experiment evidence snapshots', () => {
   it('preserves duplicate positions and authoritative node metadata on cold read', () => {
     const s = fixture(); s.treeProjection.children[0].executionHint = 'stale projection'
     const restored = readSnapshot(JSON.stringify(s))
-    expect(restored.snapshot.version).toBe(2)
+    expect(restored.snapshot.version).toBe(3)
+    expect(restored.snapshot.identityPolicy).toBe('structural-p0p1-v2')
     expect(restored.dag.ruleResults.get('root::set-op-split')?.outputs?.map(o => o.ordinal)).toEqual([1, 2])
     expect(restored.dag.nodeMap.get('shared')?.executionHint).toBeNull()
     expect(restored.dag.appliedRules.has('root::set-op-split')).toBe(true)

@@ -17,6 +17,12 @@ afterPack: scripts/after-pack.cjs
 extraResources:
   - from: backend/target/backend.jar
     to: backend.jar
+  - from: docs/tutorials
+    to: tutorials
+    filter:
+      - '**/*.pdf'
+      - '**/*.md'
+      - 'sql/**/*.sql'
 
 win:
   # Chromium locales; application translations are bundled separately by Vite.
